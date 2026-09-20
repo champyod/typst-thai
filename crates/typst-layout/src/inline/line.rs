@@ -393,7 +393,7 @@ fn adjust_thai_distributed_at_line_end(
     }
 
     for (_, item) in items.iter_mut().rev() {
-        if item.is_tag() {
+        if item.is_skippable() {
             continue;
         }
 
@@ -429,7 +429,7 @@ fn adjust_thai_distributed_at_line_start(p: &Preparation, items: &mut Items) {
     }
 
     for (_, item) in items.iter_mut() {
-        if item.is_tag() {
+        if item.is_skippable() {
             continue;
         }
 
