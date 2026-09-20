@@ -41,14 +41,6 @@ static void load_syllables(const char *path) {
     fclose(f);
 }
 
-static const wchar_t *find_syllables(const wchar_t *word, size_t len) {
-    for (int i = 0; i < nsyl; i++) {
-        if (wcslen(syl_word[i]) == len && wmemcmp(syl_word[i], word, len) == 0)
-            return syl_parts[i];
-    }
-    return NULL;
-}
-
 int main(int argc, char **argv) {
     setlocale(LC_ALL, "en_US.UTF-8");
     if (argc < 3 || argc > 5) {
@@ -80,9 +72,9 @@ int main(int argc, char **argv) {
 
     size_t olen = wcslen(out);
     wchar_t *word = malloc((olen + 1) * sizeof(wchar_t));
+    wchar_t *res = malloc((olen * 2 + 1) * sizeof(wchar_t));
+    size_t rn = 0;
 
-    FILE *fout = fopen(argv[2], "w");
-    if (!fout) { perror("open out"); return 1; }
     size_t wn = 0;
     for (size_t i = 0; i <= olen; i++) {
         int boundary = (i == olen) || !th_wcisthai(out[i]);
@@ -91,32 +83,66 @@ int main(int argc, char **argv) {
             continue;
         }
         if (wn > 0) {
-            const wchar_t *syl = hyphen ? find_syllables(word, wn) : NULL;
-            if (syl) {
-                wchar_t parts[64];
-                wcscpy(parts, syl);
-                wchar_t *save = NULL;
-                wchar_t *t = wcstok(parts, L"|", &save);
-                int first = 1;
-                while (t) {
-                    if (!first) fputwc(SHY, fout);
-                    first = 0;
-                    for (size_t j = 0; t[j]; j++) {
-                        fputwc(t[j], fout);
-                        if (t[j + 1]) fputwc(WJ, fout);
-                    }
-                    t = wcstok(NULL, L"|", &save);
-                }
-            } else {
-                for (size_t j = 0; j < wn; j++) {
-                    fputwc(word[j], fout);
-                    if (j + 1 < wn) fputwc(WJ, fout);
-                }
+            for (size_t j = 0; j < wn; j++) {
+                res[rn++] = word[j];
+                if (j + 1 < wn) res[rn++] = WJ;
             }
             wn = 0;
         }
-        if (i < olen && out[i] != WJ) fputwc(out[i], fout);
+        if (i < olen && out[i] != WJ) res[rn++] = out[i];
     }
+    res[rn] = 0;
+
+    if (hyphen) {
+        for (int s = 0; s < nsyl; s++) {
+            size_t wl = wcslen(syl_word[s]);
+            size_t si = 0;
+            while (si < rn) {
+                size_t p = si, k = 0;
+                while (k < wl && p < rn &&
+                       (res[p] == WJ || res[p] == SHY || res[p] == syl_word[s][k])) {
+                    if (res[p] != WJ && res[p] != SHY) k++;
+                    p++;
+                }
+                if (k < wl) { si++; continue; }
+                wchar_t parts[64];
+                wcscpy(parts, syl_parts[s]);
+                wchar_t *save = NULL;
+                wchar_t *t = wcstok(parts, L"|", &save);
+                size_t q = si;
+                while (t) {
+                    size_t tl = wcslen(t);
+                    size_t c = 0;
+                    while (c < tl && q < rn) {
+                        if (res[q] == WJ || res[q] == SHY) { q++; continue; }
+                        c++;
+                        q++;
+                    }
+                    t = wcstok(NULL, L"|", &save);
+                    if (t && q < rn && (res[q] == WJ || res[q] == SHY)) res[q] = SHY;
+                }
+                si++;
+            }
+        }
+    }
+
+    /* WJ prohibits breaks on both sides, so any WJ adjacent to a SHY
+       would block the break the SHY is meant to allow. Strip them. */
+    {
+        size_t w = 0;
+        for (size_t i = 0; i < rn; i++) {
+            if (res[i] == WJ &&
+                ((i > 0 && res[i - 1] == SHY) || (i + 1 < rn && res[i + 1] == SHY)))
+                continue;
+            res[w++] = res[i];
+        }
+        rn = w;
+        res[rn] = 0;
+    }
+
+    FILE *fout = fopen(argv[2], "w");
+    if (!fout) { perror("open out"); return 1; }
+    fputws(res, fout);
     fclose(fout);
     th_brk_delete(brk);
     return 0;
