@@ -707,6 +707,7 @@ fn breakpoints(p: &Preparation, mut f: impl FnMut(usize, Breakpoint)) {
     let mut last = 0;
     let mut iter = segmenter.segment_str(text).peekable();
     let mut next_url_scheme = find_url_scheme(text, 0);
+    let thai_bounds = thai_word_boundaries(text);
 
     loop {
         // Special case for links. UAX #14 doesn't handle them well.
@@ -776,6 +777,13 @@ fn breakpoints(p: &Preparation, mut f: impl FnMut(usize, Breakpoint)) {
             }
         };
 
+        // Hide ICU breaks that would split a Thai dictionary word mid-word.
+        // The dictionary joints (plus spaces) stay as the only Thai breaks.
+        if breakpoint == Breakpoint::Normal && hides_thai_break(text, point, &thai_bounds)
+        {
+            continue;
+        }
+
         // Hyphenate between the last and current breakpoint.
         if hyphenate && last < point {
             for segment in text[last..point].split_word_bounds() {
@@ -789,6 +797,171 @@ fn breakpoints(p: &Preparation, mut f: impl FnMut(usize, Breakpoint)) {
         // Call `f` for the UAX #14 break opportunity.
         f(point, breakpoint);
         last = point;
+    }
+}
+
+/// Computes the byte offsets where Thai dictionary word joints allow breaks.
+///
+/// The ICU line segmenter guesses Thai word boundaries with a statistical
+/// model that splits project vocabulary mid-word. The system Thai dictionary
+/// knows the real word joints, so intra-word ICU breaks that match no joint
+/// are hidden instead. Spaces, mandatory breaks, and hyphenations are never
+/// touched, and no new break is ever added.
+fn thai_word_boundaries(text: &str) -> Vec<usize> {
+    let mut bounds = Vec::new();
+    let mut run: Vec<(usize, char)> = Vec::new();
+
+    for (offset, c) in text.char_indices() {
+        if is_thai_block(c) {
+            run.push((offset, c));
+        } else {
+            push_thai_run_bounds(&run, &mut bounds);
+            run.clear();
+        }
+    }
+    push_thai_run_bounds(&run, &mut bounds);
+    bounds
+}
+
+/// Pushes the dictionary word joints of one maximal Thai run into `bounds`.
+fn push_thai_run_bounds(run: &[(usize, char)], bounds: &mut Vec<usize>) {
+    if run.is_empty() {
+        return;
+    }
+
+    let start = run[0].0;
+    let mut tis: Vec<u8> = Vec::with_capacity(run.len() + 1);
+    let mut offsets: Vec<usize> = Vec::with_capacity(run.len());
+    for (offset, c) in run {
+        offsets.push(offset - start);
+        tis.push(tis_620(*c));
+    }
+    tis.push(0);
+
+    for at in libthai::word_breaks(&tis) {
+        if let Some(offset) = offsets.get(at) {
+            bounds.push(start + offset);
+        }
+    }
+}
+
+/// Whether the ICU breakpoint inside Thai text must be hidden.
+///
+/// Only plain breaks strictly inside a Thai run are hidden, and only when no
+/// dictionary joint allows them there. Mandatory breaks, hyphenations, and
+/// breaks beside spaces or other scripts always stay.
+fn hides_thai_break(text: &str, point: usize, bounds: &[usize]) -> bool {
+    if bounds.binary_search(&point).is_ok() {
+        return false;
+    }
+
+    let before = text
+        .get(..point)
+        .is_some_and(|head| head.chars().next_back().is_some_and(is_thai_block));
+    let after = text
+        .get(point..)
+        .is_some_and(|tail| tail.chars().next().is_some_and(is_thai_block));
+    before && after
+}
+
+/// Whether the character belongs to the Thai script block, including vowels,
+/// tone marks, digits, and Mai Yamok.
+fn is_thai_block(c: char) -> bool {
+    matches!(c, '\u{E00}'..='\u{E7F}')
+}
+
+/// Encodes one character in TIS-620, the byte encoding libthai expects.
+///
+/// Thai block characters shift down by a fixed distance, ASCII passes through
+/// unchanged, and anything else becomes an opaque placeholder so dictionary
+/// matching simply skips it.
+fn tis_620(c: char) -> u8 {
+    if c.is_ascii() {
+        let mut encoded = [0; 4];
+        c.encode_utf8(&mut encoded);
+        encoded[0]
+    } else if matches!(c, '\u{E01}'..='\u{E5B}') {
+        u8::try_from(u32::from(c) - 0xD60).unwrap_or(b'?')
+    } else {
+        b'?'
+    }
+}
+
+/// Dictionary Thai word segmentation through the system libthai library.
+///
+/// The binding links the shared library already installed on the system, so
+/// no Rust crate dependency is added. The process-wide dictionary handle is
+/// created on first use and kept for the process lifetime, mirroring the
+/// cached ICU segmenters above.
+mod libthai {
+    use std::ffi::{c_char, c_int, c_uchar, c_void};
+    use std::sync::{LazyLock, Mutex};
+
+    #[link(name = "thai")]
+    unsafe extern "C" {
+        fn th_brk_new(dictpath: *const c_char) -> *mut c_void;
+        fn th_brk_find_breaks(
+            brk: *mut c_void,
+            s: *const c_uchar,
+            pos: *mut c_int,
+            pos_sz: usize,
+        ) -> c_int;
+    }
+
+    /// Process-wide dictionary handle with exclusive access.
+    static BREAKER: LazyLock<Mutex<Breaker>> = LazyLock::new(|| Mutex::new(open()));
+
+    /// Opaque dictionary handle. Every use happens while the mutex guard is
+    /// held, so sharing it across threads is safe.
+    struct Breaker(*mut c_void);
+
+    // SAFETY: the pointer is only dereferenced under the mutex guard above,
+    // never concurrently from two threads.
+    unsafe impl Send for Breaker {}
+
+    /// Opens the dictionary: a caller-supplied compiled dictionary wins, the
+    /// system default covers the project vocabulary on its own.
+    fn open() -> Breaker {
+        let custom = std::env::var("THAI_DICT_PATH")
+            .ok()
+            .and_then(|path| std::ffi::CString::new(path).ok());
+        // SAFETY: `th_brk_new` only reads the path while called. The pointer
+        // is either null or borrows `custom`, which outlives the call.
+        Breaker(unsafe {
+            if let Some(path) = custom.as_ref() {
+                let handle = th_brk_new(path.as_ptr());
+                if !handle.is_null() {
+                    return Breaker(handle);
+                }
+            }
+            th_brk_new(std::ptr::null())
+        })
+    }
+
+    /// Returns the word-joint positions (character indices) of a NUL-padded
+    /// TIS-620 run. Any failure yields no joints, keeping ICU behavior.
+    pub(super) fn word_breaks(tis: &[u8]) -> Vec<usize> {
+        let Ok(guard) = BREAKER.lock() else { return Vec::new() };
+        if guard.0.is_null() {
+            return Vec::new();
+        }
+
+        let mut positions: Vec<c_int> = vec![0; tis.len()];
+        // SAFETY: the handle is exclusively held through the mutex guard, the
+        // input is NUL-padded, and only the reported prefix is read back.
+        let found = unsafe {
+            th_brk_find_breaks(
+                guard.0,
+                tis.as_ptr(),
+                positions.as_mut_ptr(),
+                positions.len(),
+            )
+        };
+        let count = usize::try_from(found).unwrap_or_default().min(positions.len());
+        positions[..count]
+            .iter()
+            .filter_map(|at| usize::try_from(*at).ok())
+            .collect()
     }
 }
 
@@ -1066,5 +1239,44 @@ where
             None => T::default(),
             Some(i) => self.summed[i],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{hides_thai_break, is_thai_block, thai_word_boundaries, tis_620};
+
+    #[test]
+    fn tis_620_maps_thai_block_and_passes_ascii() {
+        assert_eq!(tis_620('ก'), 0xA1);
+        assert_eq!(tis_620('า'), 0xD2);
+        assert_eq!(tis_620('A'), b'A');
+        assert_eq!(tis_620(' '), b' ');
+        assert_eq!(tis_620('中'), b'?');
+    }
+
+    #[test]
+    fn thai_word_joints_match_dictionary_segmentation() {
+        assert!(thai_word_boundaries("ฟีเจอร์").is_empty());
+        assert!(thai_word_boundaries("วิศวกรรม").is_empty());
+        assert_eq!(thai_word_boundaries("การยืนยัน"), vec![9]);
+        assert_eq!(thai_word_boundaries("วิศวกรรมความต้องการ"), vec![24, 36]);
+    }
+
+    #[test]
+    fn intra_word_breaks_hide_but_joints_and_edges_stay() {
+        assert!(is_thai_block('ก'));
+        assert!(is_thai_block('ำ'));
+        assert!(!is_thai_block(' '));
+
+        // Inside ฟีเจอร์ every inner offset hides: the word has no joint.
+        assert!(hides_thai_break("ฟีเจอร์", 3, &[]));
+        // The การ|ยืนยัน joint at byte 9 stays even though both sides are Thai.
+        assert!(!hides_thai_break("การยืนยัน", 9, &[9]));
+        // The same offset without the joint would hide.
+        assert!(hides_thai_break("การยืนยัน", 9, &[]));
+        // Breaks beside spaces and Latin text always stay.
+        assert!(!hides_thai_break("การ ยืนยัน", 9, &[]));
+        assert!(!hides_thai_break("ฟีเจอร์X", 21, &[]));
     }
 }
