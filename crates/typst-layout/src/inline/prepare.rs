@@ -178,47 +178,40 @@ fn add_cjk_latin_spacing(items: &mut [(Range, Item)]) {
     }
 }
 
+/// Thai combining marks that stay attached to their base character, so no
+/// distributed gap separates the base from the mark.
+///
+/// Every other character is an ordinary letter with an equal gap: base
+/// consonants, vowels (including Sara Aa and leading vowels), digits, Latin
+/// letters, spaces, hyphens, and Mai Yamok.
+const THAI_FIXED_MARK: [char; 14] = [
+    '\u{E31}', '\u{E34}', '\u{E35}', '\u{E36}', '\u{E37}', '\u{E38}', '\u{E39}',
+    '\u{E47}', '\u{E48}', '\u{E49}', '\u{E4A}', '\u{E4B}', '\u{E4C}', '\u{E4D}',
+];
+
 /// Mark distributed text glyphs as justifiable for Thai distributed alignment.
 ///
-/// When Thai distributed justification is enabled, extra space is distributed
-/// evenly between Thai grapheme clusters and Latin glyph clusters. This
-/// function iterates through all shaped glyphs and sets `is_justifiable = true`
-/// on the previous distributed glyph whenever a new distributed cluster starts.
+/// When Thai distributed justification is enabled, leftover line space spreads
+/// evenly after every glyph, spaces included. The single exception is the
+/// glyph right before a Thai fixed mark, which merges with its base.
 ///
-/// This marks the last glyph of the previous distributed cluster because
-/// justification adds extra space after marked glyphs.
+/// The next glyph is read across item boundaries from one shared sequence, so
+/// words wrapped in boxes receive the same gaps as ordinary text.
 fn mark_thai_distributed(items: &mut [(Range, Item)]) {
-    use super::shaping::is_distributed_cluster_boundary;
+    let following: Vec<char> = items
+        .iter()
+        .filter_map(|(_, item)| item.text())
+        .flat_map(|text| text.glyphs.iter().map(|glyph| glyph.c))
+        .collect();
 
+    let mut index = 0;
     for (_, item) in items.iter_mut() {
-        if let Item::Text(text_item) = item {
-            let glyphs = text_item.glyphs.to_mut();
-            let mut prev_cluster: Option<(Range, usize)> = None;
-
-            for i in 0..glyphs.len() {
-                let c = glyphs[i].c;
-                let range = glyphs[i].range.clone();
-
-                if glyphs[i].is_space() {
-                    glyphs[i].is_justifiable = false;
-                    glyphs[i].adjustability.stretchability = (Em::zero(), Em::zero());
-                    prev_cluster = None;
-                    continue;
-                }
-
-                if !is_distributed_cluster_boundary(c) {
-                    prev_cluster = None;
-                    continue;
-                }
-
-                if let Some((prev_range, prev_index)) = &prev_cluster
-                    && *prev_range != range
-                {
-                    glyphs[*prev_index].is_justifiable = true;
-                }
-
-                prev_cluster = Some((range, i));
-            }
+        let Some(text) = item.text_mut() else { continue };
+        for glyph in text.glyphs.to_mut().iter_mut() {
+            index += 1;
+            glyph.is_justifiable = following
+                .get(index)
+                .is_none_or(|next| !THAI_FIXED_MARK.contains(next));
         }
     }
 }

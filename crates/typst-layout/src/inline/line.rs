@@ -413,9 +413,7 @@ fn adjust_thai_distributed_at_line_end(
         }
 
         let glyph = &mut glyphs[last_non_space];
-        if glyph.range.end <= line_end
-            && crate::inline::shaping::is_distributed_cluster_boundary(glyph.c)
-        {
+        if glyph.range.end <= line_end {
             glyph.is_justifiable = false;
         }
         break;
