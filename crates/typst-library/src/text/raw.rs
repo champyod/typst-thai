@@ -111,9 +111,8 @@ use crate::visualize::Color;
 /// @raw.line could be helpful, such as to add line numbers.
 ///
 /// Note that in raw text, typesetting features like
-/// @text.hyphenate[hyphenation], @text.overhang[overhang],
-/// @text.cjk-latin-spacing[CJK-Latin spacing], and (for raw blocks)
-/// @par.justify[justification] will be disabled by default.
+/// @text.overhang[overhang], @text.cjk-latin-spacing[CJK-Latin spacing], and
+/// (for raw blocks) @par.justify[justification] will be disabled by default.
 ///
 /// = Syntax <syntax>
 /// This function has dedicated syntax that produces a raw element in both
@@ -659,7 +658,6 @@ impl ShowSet for Packed<RawElem> {
         let mut out = Styles::new();
         out.set(TextElem::overhang, false);
         out.set(TextElem::lang, Lang::ENGLISH);
-        out.set(TextElem::hyphenate, Smart::Custom(false));
         out.set(TextElem::size, TextSize(Em::new(0.8).into()));
         out.set(TextElem::font, FontList(vec![FontFamily::new("DejaVu Sans Mono")]));
         out.set(TextElem::cjk_latin_spacing, Smart::Custom(None));

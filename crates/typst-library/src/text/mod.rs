@@ -542,28 +542,6 @@ pub struct TextElem {
     #[ghost]
     pub dir: TextDir,
 
-    /// Whether to hyphenate text to improve line breaking. When `{auto}`, text
-    /// will be hyphenated if and only if justification is enabled.
-    ///
-    /// Setting the @text.lang[text language] ensures that the correct
-    /// hyphenation patterns are used.
-    ///
-    /// ```example
-    /// #set page(width: 200pt)
-    ///
-    /// #set par(justify: true)
-    /// This text illustrates how
-    /// enabling hyphenation can
-    /// improve justification.
-    ///
-    /// #set text(hyphenate: false)
-    /// This text illustrates how
-    /// enabling hyphenation can
-    /// improve justification.
-    /// ```
-    #[ghost]
-    pub hyphenate: Smart<bool>,
-
     /// The "cost" of various choices when laying out text. A higher cost means
     /// the layout engine will make the choice less often. Costs are specified
     /// as a ratio of the default cost, so `{50%}` will make text layout twice
@@ -571,16 +549,9 @@ pub struct TextElem {
     /// eager.
     ///
     /// Currently, the following costs can be customized:
-    /// - `hyphenation`: splitting a word across multiple lines
     /// - `runt`: ending a paragraph with a line with a single word
     /// - `widow`: leaving a single line of paragraph on the next page
     /// - `orphan`: leaving single line of paragraph on the previous page
-    ///
-    /// Hyphenation is generally avoided by placing the whole word on the next
-    /// line, so a higher hyphenation cost can result in awkward justification
-    /// spacing. Note: Hyphenation costs will only be applied when the
-    /// @par.linebreaks[`linebreaks`] are set to "optimized". (For example by
-    /// default implied by @par.justify[`justify`].)
     ///
     /// Runts are avoided by placing more or fewer words on previous lines, so a
     /// higher runt cost can result in more awkward in justification spacing.
@@ -595,13 +566,13 @@ pub struct TextElem {
     /// these modifications is planned for the future.)
     ///
     /// ```example
-    /// #set text(hyphenate: true, size: 11.4pt)
+    /// #set text(size: 11.4pt)
     /// #set par(justify: true)
     ///
     /// #lorem(10)
     ///
-    /// // Set hyphenation to ten times the normal cost.
-    /// #set text(costs: (hyphenation: 1000%))
+    /// // Set the runt cost to ten times the normal cost.
+    /// #set text(costs: (runt: 1000%))
     ///
     /// #lorem(10)
     /// ```
@@ -1505,18 +1476,12 @@ impl Fold for WeightDelta {
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
 #[non_exhaustive]
 pub struct Costs {
-    hyphenation: Option<Ratio>,
     runt: Option<Ratio>,
     widow: Option<Ratio>,
     orphan: Option<Ratio>,
 }
 
 impl Costs {
-    #[must_use]
-    pub fn hyphenation(&self) -> Ratio {
-        self.hyphenation.unwrap_or(Ratio::one())
-    }
-
     #[must_use]
     pub fn runt(&self) -> Ratio {
         self.runt.unwrap_or(Ratio::one())
@@ -1537,7 +1502,6 @@ impl Fold for Costs {
     #[inline]
     fn fold(self, outer: Self) -> Self {
         Self {
-            hyphenation: self.hyphenation.or(outer.hyphenation),
             runt: self.runt.or(outer.runt),
             widow: self.widow.or(outer.widow),
             orphan: self.orphan.or(outer.orphan),
@@ -1548,19 +1512,17 @@ impl Fold for Costs {
 cast! {
     Costs,
     self => dict![
-        "hyphenation" => self.hyphenation(),
         "runt" => self.runt(),
         "widow" => self.widow(),
         "orphan" => self.orphan(),
     ].into_value(),
     mut v: Dict => {
         let ret = Self {
-            hyphenation: v.take("hyphenation").ok().map(|v| v.cast()).transpose()?,
             runt: v.take("runt").ok().map(|v| v.cast()).transpose()?,
             widow: v.take("widow").ok().map(|v| v.cast()).transpose()?,
             orphan: v.take("orphan").ok().map(|v| v.cast()).transpose()?,
         };
-        v.finish(&["hyphenation", "runt", "widow", "orphan"])?;
+        v.finish(&["runt", "widow", "orphan"])?;
         ret
     },
 }

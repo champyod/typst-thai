@@ -10,8 +10,7 @@ use typst_utils::PicoStr;
 use crate::diag::{At, SourceDiagnostic, SourceResult, StrResult, bail, warning};
 use crate::engine::Engine;
 use crate::foundations::{
-    Args, Construct, Content, Label, NativeElement, Packed, Repr, Selector, ShowSet,
-    Smart, StyleChain, Styles, cast, elem,
+    Args, Construct, Content, Label, NativeElement, Repr, Selector, StyleChain, cast, elem,
 };
 use crate::introspection::{
     Counter, CounterKey, History, Introspect, Introspector, Location, PagedPosition,
@@ -60,11 +59,6 @@ use crate::text::{LocalName, TextElem};
 /// // Raw, not a link
 /// `https://*.com`
 /// ```
-///
-/// = Hyphenation <hyphenation>
-/// If you enable hyphenation or justification, by default, it will not apply to
-/// links to prevent unwanted hyphenation in URLs. You can opt out of this
-/// default via `{show link: set text(hyphenate: true)}`.
 ///
 /// = Accessibility <accessibility>
 /// The destination of a link should be clear from the link text itself, or at
@@ -238,14 +232,6 @@ impl LinkElem {
                 Ok(Destination::Location(loc)) => Some(loc),
                 _ => None,
             })
-    }
-}
-
-impl ShowSet for Packed<LinkElem> {
-    fn show_set(&self, _: StyleChain) -> Styles {
-        let mut out = Styles::new();
-        out.set(TextElem::hyphenate, Smart::Custom(false));
-        out
     }
 }
 
