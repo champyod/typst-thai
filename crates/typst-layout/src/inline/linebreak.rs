@@ -23,11 +23,18 @@ type Cost = f64;
 // Cost parameters.
 //
 // We choose higher costs than the Knuth-Plass paper (which would be 50) because
-// it hyphenates way to eagerly in Typst otherwise. Could be related to the
+// it cuts words way too eagerly in Typst otherwise. Could be related to the
 // ratios coming out differently since Typst doesn't have the concept of glue,
 // so things work a bit differently.
-const DEFAULT_HYPH_COST: Cost = 135.0;
+// Cost of a mid-word cut that draws a hyphen glyph. The glyph is a mark the
+// author never wrote, so cutting a word apart is strongly deterred.
+const DEFAULT_GLYPH_CUT_COST: Cost = 135.0;
 const DEFAULT_RUNT_COST: Cost = 100.0;
+
+// Cost of a mid-word cut that draws nothing. Nothing marks the cut, so the
+// reader sees an ordinary word boundary — which is how scripts like Thai
+// legitimately break — and the cut costs barely more than a normal break.
+const DEFAULT_GLYPHLESS_CUT_COST: Cost = 100.0;
 
 // Other parameters.
 const MIN_RATIO: f64 = -1.0;
@@ -68,9 +75,9 @@ pub enum Breakpoint {
     Normal,
     /// A mandatory breakpoint (after '\n' or at the end of the text).
     Mandatory,
-    /// An opportunity for hyphenating and how many chars are before/after it
-    /// in the word.
-    Hyphen(u8, u8),
+    /// An opportunity for cutting a word apart: how many codepoints are before
+    /// and after the cut, and whether a hyphen glyph is drawn at the cut.
+    MidWord { before: u8, after: u8, glyph: bool },
 }
 
 impl Breakpoint {
@@ -118,13 +125,18 @@ impl Breakpoint {
             }
 
             // Trim nothing.
-            Self::Hyphen(..) => Trim::uniform(start + line.len()),
+            Self::MidWord { .. } => Trim::uniform(start + line.len()),
         }
     }
 
-    /// Whether this is a hyphen breakpoint.
-    pub fn is_hyphen(self) -> bool {
-        matches!(self, Self::Hyphen(..))
+    /// Whether the line is cut inside a word.
+    pub fn is_mid_word(self) -> bool {
+        matches!(self, Self::MidWord { .. })
+    }
+
+    /// Whether a hyphen glyph is drawn at the cut.
+    pub fn draws_hyphen(self) -> bool {
+        matches!(self, Self::MidWord { glyph: true, .. })
     }
 }
 
@@ -173,7 +185,8 @@ fn linebreak_simple<'a>(
     let mut start = 0;
     let mut last = None;
 
-    breakpoints(p, |end, breakpoint| {
+    let widths = widths_of(p);
+    breakpoints(p, width, &widths, |end, breakpoint| {
         // Compute the line and its size.
         let mut attempt = line(engine, p, start..end, breakpoint, lines.last());
 
@@ -264,7 +277,8 @@ fn linebreak_optimized_bounded<'a>(
     let mut active = 0;
     let mut prev_end = 0;
 
-    breakpoints(p, |end, breakpoint| {
+    let widths = widths_of(p);
+    breakpoints(p, width, &widths, |end, breakpoint| {
         // Find the optimal predecessor.
         let mut best: Option<Entry> = None;
 
@@ -411,7 +425,7 @@ fn linebreak_optimized_approximate(
     let mut active = 0;
     let mut prev_end = 0;
 
-    breakpoints(p, |end, breakpoint| {
+    breakpoints(p, width, &estimates.widths, |end, breakpoint| {
         // Find the optimal predecessor.
         let mut best: Option<Entry> = None;
         for (pred_index, pred) in table.iter().enumerate().skip(active) {
@@ -425,7 +439,8 @@ fn linebreak_optimized_approximate(
             // We don't really know whether the line naturally ends with a dash
             // here, so we can miss that case, but it's ok, since all of this
             // just an estimate.
-            let consecutive_dash = pred.breakpoint.is_hyphen() && breakpoint.is_hyphen();
+            let consecutive_dash =
+                pred.breakpoint.is_mid_word() && breakpoint.is_mid_word();
 
             // Estimate how much the line's spaces would need to be stretched to
             // make it the desired width. We trim at the end to not take into
@@ -436,8 +451,8 @@ fn linebreak_optimized_approximate(
                 p,
                 width,
                 estimates.widths.estimate(start..trimmed_end)
-                    + if breakpoint.is_hyphen() {
-                        metrics.approx_hyphen_width
+                    + if breakpoint.draws_hyphen() {
+                        metrics.mid_word.approx_glyph_width
                     } else {
                         Abs::zero()
                     },
@@ -655,22 +670,28 @@ fn raw_cost(
         penalty += metrics.runt_cost;
     }
 
-    // Penalize hyphenation.
-    if let Breakpoint::Hyphen(l, r) = breakpoint {
-        // We penalize hyphenations close to the edges of the word (< LIMIT
-        // chars) extra. For each step of distance from the limit, we add 15%
-        // to the cost.
+    // Penalize mid-word cuts.
+    if let Breakpoint::MidWord { before, after, glyph } = breakpoint {
+        // We penalize cuts close to the edges of the word (< LIMIT chars)
+        // extra. For each step of distance from the limit, we add 15% to the
+        // cost. Only a cut that draws a hyphen pays this: the glyph marks the
+        // cut, so a cut near the edge is conspicuously wrong, while an unmarked
+        // cut is not marked anywhere.
         const LIMIT: u8 = 5;
-        let steps = LIMIT.saturating_sub(l) + LIMIT.saturating_sub(r);
-        let extra = 0.15 * steps as f64;
-        penalty += (1.0 + extra) * metrics.hyph_cost;
+        let (cost, surcharge) = if glyph {
+            let steps = LIMIT.saturating_sub(before) + LIMIT.saturating_sub(after);
+            (metrics.mid_word.glyph, 0.15 * steps as f64)
+        } else {
+            (metrics.mid_word.glyphless, 0.0)
+        };
+        penalty += (1.0 + surcharge) * cost;
     }
 
     // Penalize two consecutive dashes extra (not necessarily hyphens).
     // Knuth-Plass does this separately after the squaring, with a higher cost,
     // but I couldn't find any explanation as to why.
     if consecutive_dash {
-        penalty += metrics.hyph_cost;
+        penalty += metrics.mid_word.glyph;
     }
 
     // From the Knuth-Plass Paper: $ (1 + beta_j + pi_j)^2 $.
@@ -683,13 +704,18 @@ fn raw_cost(
 /// Calls `f` for all possible points in the text where lines can broken.
 ///
 /// Yields for each breakpoint the text index, whether the break is mandatory
-/// (after `\n`) and whether a hyphen is required (when breaking inside of a
-/// word).
+/// (after `\n`) and, for a cut inside a word, how many codepoints are before
+/// and after the cut and whether a hyphen glyph is drawn there.
 ///
 /// This is an internal instead of an external iterator because it makes the
 /// code much simpler and the consumers of this function don't need the
 /// composability and flexibility of external iteration anyway.
-fn breakpoints(p: &Preparation, mut f: impl FnMut(usize, Breakpoint)) {
+fn breakpoints(
+    p: &Preparation,
+    width: Abs,
+    widths: &CumulativeVec<Abs>,
+    mut f: impl FnMut(usize, Breakpoint),
+) {
     let text = p.text;
 
     // Single breakpoint at the end for empty text.
@@ -698,7 +724,7 @@ fn breakpoints(p: &Preparation, mut f: impl FnMut(usize, Breakpoint)) {
         return;
     }
 
-    let hyphenate = p.config.hyphenate != Some(false);
+    let threshold = p.config.emergency_break.map(|r| r.get() * width);
     let segmenter = match p.config.lang {
         Some(Lang::CHINESE | Lang::JAPANESE) => CJ_SEGMENTER.as_borrowed(),
         _ => *SEGMENTER,
@@ -784,11 +810,17 @@ fn breakpoints(p: &Preparation, mut f: impl FnMut(usize, Breakpoint)) {
             continue;
         }
 
-        // Hyphenate between the last and current breakpoint.
-        if hyphenate && last < point {
+        // Offer mid-word breaks between the last and current breakpoint.
+        //
+        // `threshold` gates the whole thing: without a configured share of the
+        // measure, no word is ever cut, in any script.
+        if last < point {
             for segment in text[last..point].split_word_bounds() {
-                if !segment.is_empty() && segment.chars().all(char::is_alphabetic) {
-                    hyphenations(p, last, segment, &mut f);
+                if let Some(cutter) = Cutter::new(p, widths, threshold, &thai_bounds)
+                    && !segment.is_empty()
+                    && segment.chars().all(char::is_alphabetic)
+                {
+                    cutter.offer(&text[last..last + segment.len()], last, &mut f);
                 }
                 last += segment.len();
             }
@@ -805,7 +837,7 @@ fn breakpoints(p: &Preparation, mut f: impl FnMut(usize, Breakpoint)) {
 /// The ICU line segmenter guesses Thai word boundaries with a statistical
 /// model that splits project vocabulary mid-word. The system Thai dictionary
 /// knows the real word joints, so intra-word ICU breaks that match no joint
-/// are hidden instead. Spaces, mandatory breaks, and hyphenations are never
+/// are hidden instead. Spaces, mandatory breaks, and mid-word cuts are never
 /// touched, and no new break is ever added.
 fn thai_word_boundaries(text: &str) -> Vec<usize> {
     let mut bounds = Vec::new();
@@ -848,7 +880,7 @@ fn push_thai_run_bounds(run: &[(usize, char)], bounds: &mut Vec<usize>) {
 /// Whether the ICU breakpoint inside Thai text must be hidden.
 ///
 /// Only plain breaks strictly inside a Thai run are hidden, and only when no
-/// dictionary joint allows them there. Mandatory breaks, hyphenations, and
+/// dictionary joint allows them there. Mandatory breaks, mid-word cuts, and
 /// breaks beside spaces or other scripts always stay.
 fn hides_thai_break(text: &str, point: usize, bounds: &[usize]) -> bool {
     if bounds.binary_search(&point).is_ok() {
@@ -862,6 +894,77 @@ fn hides_thai_break(text: &str, point: usize, bounds: &[usize]) -> bool {
         .get(point..)
         .is_some_and(|tail| tail.chars().next().is_some_and(is_thai_block));
     before && after
+}
+
+/// Decides which words are wide enough to be cut inside themselves.
+///
+/// The share of the measure that a word must exceed is read once from the
+/// paragraph's @par.emergary-break setting. When the setting is absent there is
+/// no cutter at all and no word is ever cut, in any script.
+struct Cutter<'a> {
+    preparation: &'a Preparation<'a>,
+    widths: &'a CumulativeVec<Abs>,
+    /// The smallest advance a word may have before it becomes eligible. A
+    /// narrower word is never cut, however tight the line gets.
+    threshold: Abs,
+    thai_bounds: &'a [usize],
+}
+
+impl<'a> Cutter<'a> {
+    /// Returns a cutter, or `None` when mid-word breaking is not enabled.
+    fn new(
+        preparation: &'a Preparation<'a>,
+        widths: &'a CumulativeVec<Abs>,
+        threshold: Option<Abs>,
+        thai_bounds: &'a [usize],
+    ) -> Option<Self> {
+        Some(Self { preparation, widths, threshold: threshold?, thai_bounds })
+    }
+
+    /// Emits the mid-word cuts of one alphabetic segment, if the segment is
+    /// wide enough to be cut at all.
+    ///
+    /// Thai segments are cut at their dictionary joints and draw nothing, every
+    /// other segment at its hyphenation points with a hyphen glyph.
+    fn offer(&self, segment: &str, start: usize, f: &mut impl FnMut(usize, Breakpoint)) {
+        let word = word_range(self.preparation.text, start..start + segment.len());
+        if self.widths.estimate(word.clone()) <= self.threshold {
+            return;
+        }
+
+        if segment.chars().any(is_thai_block) {
+            let text = self.preparation.text;
+            for joint in thai_joints_within(self.thai_bounds, word.clone()) {
+                let before = text[word.start..joint].chars().count().saturating_as::<u8>();
+                let after = text[joint..word.end].chars().count().saturating_as::<u8>();
+                f(joint, Breakpoint::MidWord { before, after, glyph: false });
+            }
+        } else {
+            mid_word_breaks(self.preparation, start, segment, f);
+        }
+    }
+}
+
+/// Narrows a byte range to the word inside it, dropping surrounding whitespace.
+///
+/// The mid-word break threshold must measure the word itself: a space in front
+/// of or behind a word is collapsible at a break, so counting it would push a
+/// word that actually fits over the threshold.
+fn word_range(text: &str, range: Range) -> Range {
+    let body = &text[range.clone()];
+    let start = range.start + (body.len() - body.trim_start().len());
+    let end = start + body.trim().len();
+    start..end
+}
+
+/// Yields the dictionary joints strictly inside the given byte range.
+///
+/// Both ends are excluded: they already coincide with a surrounding break, so a
+/// breakpoint there would be redundant. `bounds` is sorted ascending.
+fn thai_joints_within(bounds: &[usize], range: Range) -> impl Iterator<Item = usize> + '_ {
+    let end = range.end;
+    let first = bounds.partition_point(|&joint| joint <= range.start);
+    bounds[first..].iter().copied().take_while(move |&joint| joint < end)
 }
 
 /// Whether the character belongs to the Thai script block, including vowels,
@@ -985,12 +1088,16 @@ fn is_valid_in_url_scheme(c: char) -> bool {
     matches!(c, '+' | '-' | '.') || c.is_ascii_alphanumeric()
 }
 
-/// Generate breakpoints for hyphenations within a word.
-fn hyphenations(
+/// Generate the mid-word breakpoints of a word.
+///
+/// The cuts are placed at syllable points and always draw a hyphen glyph. Only
+/// scripts that hypher knows about reach this; Thai text has no hypher patterns
+/// and is cut at its dictionary joints instead.
+fn mid_word_breaks(
     p: &Preparation,
     mut offset: usize,
     word: &str,
-    mut f: impl FnMut(usize, Breakpoint),
+    f: &mut impl FnMut(usize, Breakpoint),
 ) {
     let Some(lang) = lang_at(p, offset) else { return };
     let count = word.chars().count();
@@ -1001,18 +1108,12 @@ fn hyphenations(
         offset += syllable.len();
         chars += syllable.chars().count();
 
-        // Don't hyphenate after the final syllable.
+        // Don't cut after the final syllable.
         if offset == end {
             continue;
         }
 
-        // Filter out hyphenation opportunities where hyphenation was actually
-        // disabled.
-        if !hyphenate_at(p, offset) {
-            continue;
-        }
-
-        // Filter out forbidden hyphenation opportunities.
+        // Filter out forbidden mid-word cut opportunities.
         if matches!(
             syllable.chars().next_back().map(|c| LINEBREAK_DATA.get(c)),
             Some(LineBreak::Glue | LineBreak::WordJoiner | LineBreak::ZWJ)
@@ -1020,12 +1121,12 @@ fn hyphenations(
             continue;
         }
 
-        // Determine the number of codepoints before and after the hyphenation.
-        let l = chars.saturating_as::<u8>();
-        let r = (count - chars).saturating_as::<u8>();
+        // Determine the number of codepoints before and after the cut.
+        let before = chars.saturating_as::<u8>();
+        let after = (count - chars).saturating_as::<u8>();
 
-        // Call `f` for the word-internal hyphenation opportunity.
-        f(offset, Breakpoint::Hyphen(l, r));
+        // Call `f` for the word-internal cut opportunity.
+        f(offset, Breakpoint::MidWord { before, after, glyph: true });
     }
 }
 
@@ -1087,19 +1188,6 @@ fn linebreak_link(link: &str, mut f: impl FnMut(usize)) {
     }
 }
 
-/// Whether hyphenation is enabled at the given offset.
-fn hyphenate_at(p: &Preparation, offset: usize) -> bool {
-    p.config.hyphenate.unwrap_or_else(|| {
-        let (_, item) = p.get(offset);
-        match item.text() {
-            Some(text) => {
-                text.styles.get(TextElem::hyphenate).unwrap_or(p.config.justify)
-            }
-            None => false,
-        }
-    })
-}
-
 /// The text language at the given offset.
 fn lang_at(p: &Preparation, offset: usize) -> Option<hypher::Lang> {
     let lang = p.config.lang.or_else(|| {
@@ -1116,9 +1204,24 @@ fn lang_at(p: &Preparation, offset: usize) -> Option<hypher::Lang> {
 struct CostMetrics {
     min_ratio: f64,
     min_approx_ratio: f64,
-    approx_hyphen_width: Abs,
-    hyph_cost: Cost,
+    mid_word: MidWordCost,
     runt_cost: Cost,
+}
+
+/// How expensive it is to cut a word apart.
+///
+/// A cut that draws a hyphen glyph puts a mark into the text that the author
+/// never wrote, so it is deterred far harder than a cut that draws nothing. A
+/// glyphless cut reads as an ordinary word boundary, which is exactly how
+/// scripts like Thai break, so it costs barely more than a normal break.
+struct MidWordCost {
+    /// Penalty for a cut that draws a hyphen glyph.
+    glyph: Cost,
+    /// Penalty for a cut that draws nothing.
+    glyphless: Cost,
+    /// Width a drawn hyphen adds to an estimated line. A glyphless cut adds
+    /// nothing, so its lines are estimated at their natural width.
+    approx_glyph_width: Abs,
 }
 
 impl CostMetrics {
@@ -1128,10 +1231,13 @@ impl CostMetrics {
             // When justifying, we may stretch spaces below their natural width.
             min_ratio: if p.config.justify { MIN_RATIO } else { 0.0 },
             min_approx_ratio: if p.config.justify { MIN_APPROX_RATIO } else { 0.0 },
-            // Approximate hyphen width for estimates.
-            approx_hyphen_width: Em::new(0.33).at(p.config.font_size),
+            mid_word: MidWordCost {
+                glyph: DEFAULT_GLYPH_CUT_COST,
+                glyphless: DEFAULT_GLYPHLESS_CUT_COST,
+                // Approximate width of the drawn glyph for estimates.
+                approx_glyph_width: Em::new(0.33).at(p.config.font_size),
+            },
             // Costs.
-            hyph_cost: DEFAULT_HYPH_COST * p.config.costs.hyphenation().get(),
             runt_cost: DEFAULT_RUNT_COST * p.config.costs.runt().get(),
         }
     }
@@ -1193,6 +1299,29 @@ impl Estimates {
             justifiables,
         }
     }
+}
+
+/// A width-only cumulative array, for the line breaking paths that have no full
+/// [`Estimates`].
+///
+/// This mirrors the width accumulation of `Estimates::compute`, which the
+/// optimized path keeps as a single pass for speed.
+fn widths_of(p: &Preparation) -> CumulativeVec<Abs> {
+    let mut widths = CumulativeVec::with_capacity(p.text.len());
+
+    for (range, item) in &p.items {
+        if let Item::Text(shaped) = item {
+            for g in shaped.glyphs.iter() {
+                widths.push(g.range.len(), g.x_advance.at(g.size));
+            }
+        } else {
+            widths.push(range.len(), item.natural_width());
+        }
+
+        widths.adjust(range.end);
+    }
+
+    widths
 }
 
 /// An accumulative array of a metric.

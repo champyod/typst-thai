@@ -16,7 +16,7 @@ use typst_library::diag::SourceResult;
 use typst_library::engine::{Engine, Route, Sink, Traced};
 use typst_library::foundations::{Packed, Smart, StyleChain};
 use typst_library::introspection::{Introspector, Locator, LocatorLink, SplitLocator};
-use typst_library::layout::{Abs, AlignElem, Dir, FixedAlignment, Fragment, Size};
+use typst_library::layout::{Abs, AlignElem, Dir, FixedAlignment, Fragment, Ratio, Size};
 use typst_library::model::{
     EnumElem, FirstLineIndent, JustificationLimits, Linebreaks, ListElem, ParElem,
     ParLine, ParLineMarker, TermsElem,
@@ -116,6 +116,7 @@ fn layout_par_impl(
         &ConfigBase {
             justify: elem.justify.get(styles),
             thai_distributed: elem.thai_distributed.get(styles),
+            emergency_break: elem.emergency_break.get(styles),
             linebreaks: elem.linebreaks.get(styles),
             first_line_indent: elem.first_line_indent.get(styles),
             hanging_indent: elem.hanging_indent.resolve(styles),
@@ -143,6 +144,7 @@ pub fn layout_inline<'a>(
         &ConfigBase {
             justify: shared.get(ParElem::justify),
             thai_distributed: shared.get(ParElem::thai_distributed),
+            emergency_break: shared.get(ParElem::emergency_break),
             linebreaks: shared.get(ParElem::linebreaks),
             first_line_indent: shared.get(ParElem::first_line_indent),
             hanging_indent: shared.resolve(ParElem::hanging_indent),
@@ -193,6 +195,7 @@ fn configuration(
     Config {
         justify,
         thai_distributed: base.thai_distributed,
+        emergency_break: base.emergency_break,
         justification_limits: shared.get(ParElem::justification_limits),
         linebreaks: base.linebreaks.unwrap_or_else(|| {
             if justify { Linebreaks::Optimized } else { Linebreaks::Simple }
@@ -235,8 +238,6 @@ fn configuration(
         align: shared.get(AlignElem::alignment).fix(dir).x,
         font_size,
         dir,
-        hyphenate: shared_get(children, shared, |s| s.get(TextElem::hyphenate))
-            .map(|uniform| uniform.unwrap_or(justify)),
         lang: shared_get(children, shared, |s| s.get(TextElem::lang)),
         fallback: shared.get(TextElem::fallback),
         cjk_latin_spacing: shared.get(TextElem::cjk_latin_spacing).is_auto(),
@@ -264,6 +265,7 @@ pub enum ParSituation {
 struct ConfigBase {
     justify: bool,
     thai_distributed: bool,
+    emergency_break: Option<Ratio>,
     linebreaks: Smart<Linebreaks>,
     first_line_indent: FirstLineIndent,
     hanging_indent: Abs,
@@ -275,6 +277,9 @@ struct Config {
     justify: bool,
     /// Whether to use Thai distributed justification.
     thai_distributed: bool,
+    /// The share of the line measure beyond which a word may be cut apart.
+    /// `None` means no word is ever cut apart.
+    emergency_break: Option<Ratio>,
     /// Settings for justification.
     justification_limits: JustificationLimits,
     /// How to determine line breaks.
@@ -291,9 +296,6 @@ struct Config {
     font_size: Abs,
     /// The dominant direction.
     dir: Dir,
-    /// A uniform hyphenation setting (only `Some(_)` if it's the same for all
-    /// children, otherwise `None`).
-    hyphenate: Option<bool>,
     /// The text language (only `Some(_)` if it's the same for all
     /// children, otherwise `None`).
     lang: Option<Lang>,

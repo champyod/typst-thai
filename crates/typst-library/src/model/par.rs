@@ -226,10 +226,6 @@ pub struct ParElem {
 
     /// Whether to justify text in its line.
     ///
-    /// Hyphenation will be enabled for justified paragraphs if the
-    /// @text.hyphenate[text function's `hyphenate` property] is set to `{auto}`
-    /// and the current language is known.
-    ///
     /// Note that the current @align.alignment[alignment] still has an effect on
     /// the placement of the last line except if it ends with a
     /// @linebreak.justify[justified line break].
@@ -263,6 +259,20 @@ pub struct ParElem {
     /// ```
     #[default(false)]
     pub thai_distributed: bool,
+
+    /// The share of the line measure beyond which a word may be cut apart.
+    ///
+    /// When set to a percentage, a word whose own width exceeds that share of
+    /// the line measure may be broken inside itself, so that a word which is
+    /// too wide for the measure is not left overflowing. A cut in Latin text
+    /// draws a hyphen glyph at the cut, while a cut in Thai text happens at a
+    /// dictionary word joint and draws nothing. A word that is not that wide is
+    /// never cut, no matter how tight the surrounding line is.
+    ///
+    /// When this property is unset (its default) or set to `{none}`, no word is
+    /// ever cut apart, in any script.
+    #[default(None)]
+    pub emergency_break: Option<Ratio>,
 
     /// How much the spacing between words and characters may be adjusted during
     /// justification.

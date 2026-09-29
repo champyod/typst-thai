@@ -37,7 +37,7 @@ pub struct Line<'a> {
     /// Whether the line should be justified.
     pub justify: bool,
     /// Whether the line ends with a hyphen or dash, either naturally or through
-    /// hyphenation.
+    /// a mid-word cut that draws a hyphen glyph.
     pub dash: Option<Dash>,
 }
 
@@ -138,8 +138,12 @@ pub fn line<'a>(
     let justify = full.ends_with(LINE_SEPARATOR)
         || (p.config.justify && breakpoint != Breakpoint::Mandatory);
 
+    // A cut that draws no hyphen glyph must not gain one, neither at the end of
+    // this line nor at the start of the next.
+    let glyphless_cut = breakpoint.is_mid_word() && !breakpoint.draws_hyphen();
+
     // Process dashes.
-    let dash = if breakpoint.is_hyphen() || full.ends_with(SHY) {
+    let dash = if breakpoint.draws_hyphen() || full.ends_with(SHY) {
         Some(Dash::Soft)
     } else if full.ends_with(HYPHEN) {
         Some(Dash::Hard)
@@ -160,7 +164,8 @@ pub fn line<'a>(
     collect_items(&mut items, engine, p, range, &trim);
 
     // Add a hyphen at the line start, if a previous dash should be repeated.
-    if let Some(pred) = pred
+    if !glyphless_cut
+        && let Some(pred) = pred
         && pred.dash == Some(Dash::Hard)
         && let Some(pred_text) = pred.items.trailing_text()
         && should_repeat_hyphen(pred_text.lang, full)
