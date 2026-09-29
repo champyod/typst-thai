@@ -72,18 +72,20 @@ Hello World!
 
 
 --- show-where-resolving-hyphenate paged ---
-// Test again that resolving is *not* taken into account.
-#set text(hyphenate: auto)
+// Test again that resolving is *not* taken into account. `cjk-latin-spacing`
+// is used because it is the remaining `text` property with an `auto` state.
+#set text(cjk-latin-spacing: auto)
 
 #[
-  #show text.where(hyphenate: auto): underline
+  #show text.where(cjk-latin-spacing: auto): underline
   Auto
 ]
 #[
-  #show text.where(hyphenate: true): underline
-  True
+  #show text.where(cjk-latin-spacing: none): underline
+  Not Underlined
 ]
-#[
-  #show text.where(hyphenate: false): underline
-  False
-]
+#{
+  set text(cjk-latin-spacing: none)
+  show text.where(cjk-latin-spacing: none): underline
+  [Underlined]
+}

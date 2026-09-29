@@ -5,7 +5,7 @@
 This text is justified, meaning that spaces are stretched so that the text
 forms a "block" with flush edges at both sides.
 
-First line indents and hyphenation play nicely with justified text.
+First line indents and mid-word breaks play nicely with justified text.
 
 --- justify-knuth-story paged large ---
 #set page(width: auto, height: auto)
@@ -23,10 +23,9 @@ First line indents and hyphenation play nicely with justified text.
   it; and this ball was her favorite plaything.
 ]
 
-#let column(title, linebreaks, hyphenate) = {
+#let column(title, linebreaks, emergency-break) = {
   rect(inset: 0pt, width: 132pt, fill: rgb("eee"))[
-    #set par(linebreaks: linebreaks)
-    #set text(hyphenate: hyphenate)
+    #set par(linebreaks: linebreaks, emergency-break: emergency-break)
     #strong(title) \ #story
   ]
 }
@@ -34,9 +33,9 @@ First line indents and hyphenation play nicely with justified text.
 #grid(
   columns: 3,
   gutter: 10pt,
-  column([Simple without hyphens], "simple", false),
-  column([Simple with hyphens], "simple", true),
-  column([Optimized with hyphens], "optimized", true),
+  column([Simple without cuts], "simple", none),
+  column([Simple with cuts], "simple", 30%),
+  column([Optimized with cuts], "optimized", 30%),
 )
 
 --- justify-manual-linebreak paged ---
@@ -93,7 +92,8 @@ int main() {
 ```
 
 --- justify-limits-glyph-shrink-only paged ---
-#set text(hyphenate: false, overhang: false)
+#set text(overhang: false)
+#set par(emergency-break: none)
 #set par(
   justify: true,
   justification-limits: (
@@ -105,7 +105,8 @@ int main() {
 #block(fill: aqua.lighten(50%), width: 100%, lorem(10))
 
 --- justify-limits-glyph-grow-only paged ---
-#set text(hyphenate: false, overhang: false)
+#set text(overhang: false)
+#set par(emergency-break: none)
 #set par(
   justify: true,
   justification-limits: (
@@ -117,8 +118,7 @@ int main() {
 #block(fill: aqua.lighten(50%), width: 100%, lorem(10))
 
 --- justify-limits-tight-overstretch paged ---
-#set par(justify: true)
-#set text(hyphenate: false)
+#set par(justify: true, emergency-break: none)
 #let with-limits(..args, body) = {
   set par(justification-limits: args.named())
   body
@@ -272,6 +272,7 @@ int main() {
 
 --- issue-5360-unnecessary-hyphenation paged ---
 // Test whether `Formal` would be in one line.
+#set par(emergency-break: 30%)
 #set par(justify: true)
 #table(columns: 1, [Formal])
 

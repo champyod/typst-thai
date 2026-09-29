@@ -193,7 +193,7 @@ B
 // Test how column balancing distributes leftover lines across columns
 #set page(width: 350pt)
 #set text(size: 6pt)
-#set text(hyphenate: true)
+#set par(emergency-break: 0%)
 #set par(justify: true)
 #for (n, mm) in ((7, (28, 30, 31, 32, 34, 36, 38)),) {
   for m in mm {
@@ -212,7 +212,7 @@ B
 
 --- columns-balanced-pagebreak paged ---
 #set page(width: 300pt, height: 90pt, margin: 5pt, columns: 3)
-#set text(hyphenate: true)
+#set par(emergency-break: 0%)
 #set par(justify: true)
 #set columns(balanced: true, separator: line())
 #lorem(35)
@@ -222,7 +222,7 @@ B
 --- columns-balanced-figures paged ---
 #set page(width: 300pt, height: 190pt, margin: 5pt, columns: 3)
 #set columns(balanced: true, separator: line())
-#set text(hyphenate: true)
+#set par(emergency-break: 0%)
 #set par(justify: true)
 #figure(rect(height: 30pt, width: 100%))
 #lorem(25)#footnote[Footer]
@@ -232,7 +232,7 @@ B
 
 --- columns-balanced-footnotes paged ---
 #set page(width: 300pt, height: 90pt, margin: 5pt, columns: 3)
-#set text(hyphenate: true)
+#set par(emergency-break: 0%)
 #set par(justify: true)
 #set columns(balanced: true, separator: line())
 #lorem(10)#footnote[Footer]
@@ -277,14 +277,14 @@ B
 
 --- columns-separator paged ---
 #set page(width: 200pt, height: 100pt, columns: 2)
-#set text(hyphenate: true)
+#set par(emergency-break: 0%)
 #set par(justify: true)
 #set columns(separator: line(stroke: red + 1pt))
 #lorem(30)
 
 --- columns-separator-content paged ---
 #set page(width: 200pt, height: 100pt, columns: 2)
-#set text(hyphenate: true)
+#set par(emergency-break: 0%)
 #set par(justify: true)
 #set curve(stroke: blue)
 #set columns(

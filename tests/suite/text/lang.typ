@@ -20,7 +20,7 @@
 
 --- text-lang-hyphenate paged ---
 // Ensure that setting the language does have effects.
-#set text(hyphenate: true)
+#set par(emergency-break: 0%)
 #grid(
   columns: 2 * (20pt,),
   gutter: 1fr,

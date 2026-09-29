@@ -501,8 +501,7 @@ Welcome \ here. Does this work well?
 
 --- par-metadata-after-trimmed-space paged ---
 // Ensure that metadata doesn't prevent trailing spaces from being trimmed.
-#set par(justify: true, linebreaks: "simple")
-#set text(hyphenate: false)
+#set par(justify: true, linebreaks: "simple", emergency-break: none)
 Lorem ipsum dolor #metadata(none) nonumy eirmod tempor.
 
 --- par-show-children paged ---

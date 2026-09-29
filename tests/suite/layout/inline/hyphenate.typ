@@ -1,8 +1,8 @@
-// Test hyphenation.
+// Test mid-word breaking.
 
 --- hyphenate paged ---
-// Test hyphenating english and greek.
-#set text(hyphenate: true)
+// Test breaking words in english and greek.
+#set par(emergency-break: 0%)
 #set page(width: auto)
 #grid(
   columns: (50pt, 50pt),
@@ -11,29 +11,30 @@
 )
 
 --- hyphenate-off-temporarily paged ---
-// Test disabling hyphenation for short passages.
+// Test enabling and disabling mid-word breaking.
 #set page(width: 110pt)
-#set text(hyphenate: true)
+#set par(emergency-break: 30%)
 
 Welcome to wonderful experiences. \
 Welcome to `wonderful` experiences. \
-Welcome to #text(hyphenate: false)[wonderful] experiences. \
-Welcome to wonde#text(hyphenate: false)[rf]ul experiences. \
+Welcome to [wonderful] experiences. \
 
-// Test enabling hyphenation for short passages.
-#set text(hyphenate: false)
+// Test that no word is cut when the share is unset.
+#set par(emergency-break: none)
 Welcome to wonderful experiences. \
-Welcome to wo#text(hyphenate: true)[nd]erful experiences. \
+Welcome to `wonderful` experiences. \
+Welcome to [wonderful] experiences. \
 
 --- hyphenate-between-shape-runs paged ---
-// Hyphenate between shape runs.
+// Cut a word between shape runs.
 #set page(width: 80pt)
-#set text(hyphenate: true)
+#set par(emergency-break: 30%)
 It's a #emph[Tree]beard.
 
 --- hyphenate-shy paged ---
 // Test shy hyphens.
-#set text(lang: "de", hyphenate: true)
+#set text(lang: "de")
+#set par(emergency-break: 0%)
 #grid(
   columns: 2 * (20pt,),
   gutter: 20pt,
@@ -44,15 +45,15 @@ It's a #emph[Tree]beard.
 --- hyphenate-punctuation paged ---
 // This sequence would confuse hypher if we passed trailing / leading
 // punctuation instead of just the words. So this tests that we don't
-// do that. The test passes if there's just one hyphenation between
+// do that. The test passes if there's just one cut between
 // "net" and "works".
 #set page(width: 60pt)
-#set text(hyphenate: true)
+#set par(emergency-break: 30%)
 #h(6pt) networks, the rest.
 
 --- hyphenate-outside-of-words paged ---
-// More tests for hyphenation of non-words.
-#set text(hyphenate: true)
+// More tests for cutting non-words.
+#set par(emergency-break: 0%)
 #block(width: 0pt, "doesn't")
 #block(width: 0pt, "(OneNote)")
 #block(width: 0pt, "(present)")
@@ -62,7 +63,7 @@ It's a #emph[Tree]beard.
 
 --- hyphenate-pt-repeat-hyphen-natural-word-breaking paged ---
 // The word breaker naturally breaks arco-da-velha at arco-/-da-velha,
-// so we shall repeat the hyphen, even that hyphenate is set to false.
+// so we shall repeat the hyphen, even that breaking is not enabled.
 #set page(width: 4cm)
 #set text(lang: "pt")
 
@@ -70,19 +71,22 @@ Alguma coisa no arco-da-velha é algo que está muito longe.
 
 --- hyphenate-pt-repeat-hyphen-hyphenate-true paged ---
 #set page(width: 4cm)
-#set text(lang: "pt", hyphenate: true)
+#set text(lang: "pt")
+#set par(emergency-break: 0%)
 
 Alguma coisa no arco-da-velha é algo que está muito longe.
 
 --- hyphenate-pt-repeat-hyphen-hyphenate-true-with-emphasis paged ---
 #set page(width: 4cm)
-#set text(lang: "pt", hyphenate: true)
+#set text(lang: "pt")
+#set par(emergency-break: 0%)
 
 Alguma coisa no _arco-da-velha_ é algo que está muito longe.
 
 --- hyphenate-pt-no-repeat-hyphen paged ---
 #set page(width: 4cm)
-#set text(lang: "pt", hyphenate: true)
+#set text(lang: "pt")
+#set par(emergency-break: 0%)
 
 Um médico otorrinolaringologista cuida da garganta do paciente.
 
@@ -90,13 +94,15 @@ Um médico otorrinolaringologista cuida da garganta do paciente.
 // If the hyphen is followed by a space we shall not repeat the hyphen
 // at the next line
 #set page(width: 4cm)
-#set text(lang: "pt", hyphenate: true)
+#set text(lang: "pt")
+#set par(emergency-break: 0%)
 
 Quebabe é a -melhor- comida que existe.
 
 --- hyphenate-es-repeat-hyphen paged ---
 #set page(width: 6cm)
-#set text(lang: "es", hyphenate: true)
+#set text(lang: "es")
+#set par(emergency-break: 0%)
 
 Lo que entendemos por nivel léxico-semántico, en cuanto su sentido más
 gramatical: es aquel que estudia el origen y forma de las palabras de
@@ -106,7 +112,8 @@ un idioma.
 // If the hyphen is followed by a capitalized word we shall not repeat
 //  the hyphen at the next line
 #set page(width: 6.2cm)
-#set text(lang: "es", hyphenate: true)
+#set text(lang: "es")
+#set par(emergency-break: 0%)
 
 Tras el estallido de la contienda Ruiz-Giménez fue detenido junto a sus
 dos hermanos y puesto bajo custodia por las autoridades republicanas, con
@@ -150,32 +157,35 @@ Hello-#text(red)[world]
 #sample
 
 --- costs-hyphenation-avoid paged ---
+// The cut cost is an internal constant, so the only way to avoid a mid-word
+// cut is to not make the word eligible for one.
 #set par(justify: true)
 
-#let sample = [we've increased the hyphenation cost.]
+#let sample = [we've increased the threshold for cutting words apart.]
 
+#set par(emergency-break: 30%)
 #sample
 #pagebreak()
-#set text(costs: (hyphenation: 10000%))
+#set par(emergency-break: none)
 #sample
 
 --- costs-invalid-type eval ---
-// Error: 18-37 expected ratio, found auto
-#set text(costs: (hyphenation: auto))
+// Error: 18-30 expected ratio, found auto
+#set text(costs: (runt: auto))
 
 --- costs-invalid-key eval ---
-// Error: 18-52 unexpected key "invalid-key", valid keys are "hyphenation", "runt", "widow", and "orphan"
-#set text(costs: (hyphenation: 1%, invalid-key: 3%))
+// Error: 18-45 unexpected key "invalid-key", valid keys are "runt", "widow", and "orphan"
+#set text(costs: (runt: 1%, invalid-key: 3%))
 
 --- costs-access paged empty ---
-#set text(costs: (hyphenation: 1%, runt: 2%))
+#set text(costs: (runt: 2%))
 #set text(costs: (widow: 3%))
-#context test(text.costs, (hyphenation: 1%, runt: 2%, widow: 3%, orphan: 100%))
+#context test(text.costs, (runt: 2%, widow: 3%, orphan: 100%))
 
 --- issue-hyphenate-after-tag paged ---
-// Ensure that an invisible tag does not prevent hyphenation.
+// Ensure that an invisible tag does not prevent a mid-word cut.
 #set page(width: 50pt)
-#set text(hyphenate: true)
+#set par(emergency-break: 30%)
 #show "Tree": emph
 #show emph: set text(red)
 #show emph: it => it + metadata(none)
