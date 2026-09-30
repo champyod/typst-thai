@@ -1090,16 +1090,15 @@ fn is_valid_in_url_scheme(c: char) -> bool {
 
 /// Generate the mid-word breakpoints of a word.
 ///
-/// The cuts are placed at syllable points and always draw a hyphen glyph. Only
-/// scripts that hypher knows about reach this; Thai text has no hypher patterns
-/// and is cut at its dictionary joints instead.
+/// The cuts are placed at syllable points and always draw a hyphen glyph. Thai
+/// words never reach this: they are cut at their dictionary joints instead.
 fn mid_word_breaks(
     p: &Preparation,
     mut offset: usize,
     word: &str,
     f: &mut impl FnMut(usize, Breakpoint),
 ) {
-    let Some(lang) = lang_at(p, offset) else { return };
+    let lang = cut_lang_at(p, offset);
     let count = word.chars().count();
     let end = offset + word.len();
 
@@ -1189,6 +1188,11 @@ fn linebreak_link(link: &str, mut f: impl FnMut(usize)) {
 }
 
 /// The text language at the given offset.
+///
+/// Returns `None` when the language has no syllable patterns. Callers that cut
+/// words fall back to English in that case: a paragraph tagged `lang: "th"`
+/// still contains Latin-script technical terms, and those follow English
+/// syllable rules rather than going uncut.
 fn lang_at(p: &Preparation, offset: usize) -> Option<hypher::Lang> {
     let lang = p.config.lang.or_else(|| {
         let (_, item) = p.get(offset);
@@ -1198,6 +1202,15 @@ fn lang_at(p: &Preparation, offset: usize) -> Option<hypher::Lang> {
 
     let bytes = lang.as_str().as_bytes().try_into().ok()?;
     hypher::Lang::from_iso(bytes)
+}
+
+/// The syllable language to cut a word with.
+///
+/// hypher carries no Thai patterns, so a Thai-tagged paragraph would otherwise
+/// leave every Latin term inside it uncut and overflowing the measure. Those
+/// terms are still Latin script, so English patterns govern them.
+fn cut_lang_at(p: &Preparation, offset: usize) -> hypher::Lang {
+    lang_at(p, offset).unwrap_or(hypher::Lang::English)
 }
 
 /// Resolved metrics relevant for cost computation.
