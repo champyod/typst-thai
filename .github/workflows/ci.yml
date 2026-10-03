@@ -74,15 +74,32 @@ jobs:
           # The compiled-in DICT_DIR is an absolute build-machine path, and the
           # DLL-relative fallback needs a loaded DLL that a static link never has.
           echo "THAI_DICT_PATH=C:\\msys64\\ucrt64\\share\\libthai\\thbrk.tri" >> "$GITHUB_ENV"
-      - run: cargo test --workspace --no-run --target ${{ startsWith(matrix.os, 'windows-') && 'x86_64-pc-windows-gnu' || '' }}
-      - run: cargo test --workspace --no-fail-fast --target ${{ startsWith(matrix.os, 'windows-') && 'x86_64-pc-windows-gnu' || '' }}
+      - name: Build and run the test suite
+        shell: bash
+        # The flag has to vanish entirely on Linux: `cargo test --target` with an
+        # empty value is an error, so it cannot be interpolated conditionally.
+        run: |
+          target=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            target="--target x86_64-pc-windows-gnu"
+          fi
+          cargo test --workspace --no-run $target
+          cargo test --workspace --no-fail-fast $target
         env:
           # Only generate annotations from one matrix configuration.
           USE_GITHUB_ANNOTATIONS: ${{ startsWith(matrix.os, 'ubuntu-') && matrix.bits == 64 }}
 
       - name: Generate missing live output and regenerate the test report
         if: always()
-        run: cargo testit regen --rerun ${{ (job.status == 'success' && github.event_name == 'pull_request') && format('--base-revision={0}', github.event.pull_request.base.sha) || '' }}
+        shell: bash
+        run: |
+          target=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            target="--target x86_64-pc-windows-gnu"
+          fi
+          # The testit alias hardcodes `--`, so a cargo flag cannot be appended
+          # after it; the wrapper is invoked directly to keep the flag on cargo.
+          cargo run --quiet --package=test-wrapper $target -- regen --rerun ${{ (job.status == 'success' && github.event_name == 'pull_request') && format('--base-revision={0}', github.event.pull_request.base.sha) || '' }}
 
       - name: Upload test store
         if: failure()
