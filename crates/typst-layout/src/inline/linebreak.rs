@@ -918,7 +918,12 @@ impl<'a> Cutter<'a> {
         threshold: Option<Abs>,
         thai_bounds: &'a [usize],
     ) -> Option<Self> {
-        Some(Self { preparation, widths, threshold: threshold?, thai_bounds })
+        Some(Self {
+            preparation,
+            widths,
+            threshold: threshold?,
+            thai_bounds,
+        })
     }
 
     /// Emits the mid-word cuts of one alphabetic segment, if the segment is
@@ -935,7 +940,8 @@ impl<'a> Cutter<'a> {
         if segment.chars().any(is_thai_block) {
             let text = self.preparation.text;
             for joint in thai_joints_within(self.thai_bounds, word.clone()) {
-                let before = text[word.start..joint].chars().count().saturating_as::<u8>();
+                let before =
+                    text[word.start..joint].chars().count().saturating_as::<u8>();
                 let after = text[joint..word.end].chars().count().saturating_as::<u8>();
                 f(joint, Breakpoint::MidWord { before, after, glyph: false });
             }
@@ -961,7 +967,10 @@ fn word_range(text: &str, range: Range) -> Range {
 ///
 /// Both ends are excluded: they already coincide with a surrounding break, so a
 /// breakpoint there would be redundant. `bounds` is sorted ascending.
-fn thai_joints_within(bounds: &[usize], range: Range) -> impl Iterator<Item = usize> + '_ {
+fn thai_joints_within(
+    bounds: &[usize],
+    range: Range,
+) -> impl Iterator<Item = usize> + '_ {
     let end = range.end;
     let first = bounds.partition_point(|&joint| joint <= range.start);
     bounds[first..].iter().copied().take_while(move |&joint| joint < end)

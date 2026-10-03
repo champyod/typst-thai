@@ -10,7 +10,8 @@ use typst_utils::PicoStr;
 use crate::diag::{At, SourceDiagnostic, SourceResult, StrResult, bail, warning};
 use crate::engine::Engine;
 use crate::foundations::{
-    Args, Construct, Content, Label, NativeElement, Repr, Selector, StyleChain, cast, elem,
+    Args, Construct, Content, Label, NativeElement, Repr, Selector, StyleChain, cast,
+    elem,
 };
 use crate::introspection::{
     Counter, CounterKey, History, Introspect, Introspector, Location, PagedPosition,
