@@ -14,7 +14,7 @@ RUN --mount=type=cache,target=/root/.cargo/git/db \
 
 ARG TARGETPLATFORM
 
-RUN xx-apk add --no-cache musl-dev openssl-dev openssl-libs-static
+RUN xx-apk add --no-cache musl-dev openssl-dev openssl-libs-static libthai libthai-dev
 RUN --mount=type=cache,target=/root/.cargo/git/db \
     --mount=type=cache,target=/root/.cargo/registry/cache \
     --mount=type=cache,target=/root/.cargo/registry/index \
@@ -42,6 +42,10 @@ LABEL org.opencontainers.image.source="https://github.com/typst/typst"
 LABEL org.opencontainers.image.title="Typst Docker image"
 LABEL org.opencontainers.image.url="https://typst.app"
 LABEL org.opencontainers.image.vendor="Typst"
+
+# libthai carries both the shared library the binary links and thbrk.tri,
+# which th_brk_new reads at runtime.
+RUN apk add --no-cache libthai
 
 COPY --from=build  /app/target/release/typst /bin
 ENTRYPOINT [ "/bin/typst" ]
