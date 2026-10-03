@@ -16,30 +16,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-musl
+          - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            cross: true
-          - target: aarch64-unknown-linux-musl
+          - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            cross: true
-          - target: armv7-unknown-linux-musleabi
-            os: ubuntu-latest
-            cross: true
-          - target: riscv64gc-unknown-linux-gnu
-            os: ubuntu-latest
-            cross: true
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            cross: false
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            cross: false
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            cross: false
-          - target: aarch64-pc-windows-msvc
-            os: windows-latest
-            cross: false
 
     steps:
       - name: Checkout repository
@@ -50,18 +30,20 @@ jobs:
         with:
           target: ${{ matrix.target }}
 
-      - name: Run Cross
-        if: ${{ matrix.cross }}
+      - name: Install libthai
+        # libthai-data ships thbrk.tri, which th_brk_new reads at runtime.
+        # The binding is a bare `-lthai`, so the linker resolves it from the
+        # target's own library path: the arm64 leg needs the arm64 package,
+        # not the runner's amd64 one.
         run: |
-          cargo install cross --git https://github.com/cross-rs/cross.git --locked --rev 085092ca
-          # Suppress getrandom 0.2/0.3 NetBSD metadata conflict warning (doesn't
-          # affect us). We can't currently unify the depencencies because
-          # unicode_names2 is not compatible with getrandom 0.3.
-          CROSS_NO_WARNINGS=0 cross build -p typst-cli --release --target "${{ matrix.target }}" --features self-update,vendor-openssl
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            sudo dpkg --add-architecture arm64
+            sudo apt update
+          fi
+          sudo apt install -y libthai-dev${{ matrix.target == 'aarch64-unknown-linux-gnu' && ':arm64' || '' }} libthai-data
 
       - name: Run Cargo
-        if: ${{ !matrix.cross }}
-        run: cargo build -p typst-cli --release --target "${{ matrix.target }}" --features self-update
+        run: cargo build -p typst-cli --release --target ${{ matrix.target }} --features self-update
 
       - name: Create artifact directory
         shell: bash
@@ -70,6 +52,11 @@ jobs:
           ARCHIVE_DIR="typst-${{ matrix.target }}"
           mkdir "$ARCHIVE_DIR"
           cp README.md LICENSE NOTICE "$ARCHIVE_DIR"
+          # th_brk_new falls back to the DICT_DIR compiled into libthai, an
+          # absolute build-machine path that does not exist on a consumer's
+          # machine, so the dictionary ships with the archive.
+          mkdir -p "$ARCHIVE_DIR/share/libthai"
+          cp /usr/share/libthai/thbrk.tri "$ARCHIVE_DIR/share/libthai"
           if [ -f "$TARGET_DIR/typst.exe" ]; then
             ARCHIVE="$ARCHIVE_DIR.zip"
             cp "$TARGET_DIR/typst.exe" "$ARCHIVE_DIR"
