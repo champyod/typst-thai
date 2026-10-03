@@ -79,6 +79,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@f8be11a05b1d4f3fcebe6410cc16743212b999b0 # 1.98.0
 
+      - name: Install libthai
+        # docit compiles the docs by linking typst-docs, so this job needs
+        # libthai exactly like the binary job does.
+        run: sudo apt install -y libthai-dev libthai-data
+
       - name: Compile documentation
         run: cargo docit compile --format pdf --release
 
