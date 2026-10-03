@@ -65,9 +65,21 @@ sudo apt install -y libthai-dev libthai-data
 the one carrying `thbrk.tri`; without it the binary links fine and then
 segments nothing at runtime.
 
-At runtime the binary needs `libthai0` present, which is a small library that
-is packaged essentially everywhere, and `THAI_DICT_PATH` pointing at the
-`thbrk.tri` shipped in the release archive:
+At runtime the binary needs `libthai0`, the shared library, and
+`libthai-data`, the dictionary:
+
+```sh
+sudo apt install -y libthai0 libthai-data
+```
+
+No environment variable is needed for that. `th_brk_new(NULL)` looks in
+`$LIBTHAI_DICTDIR` first and then in `/usr/share/libthai`, which is the path
+compiled into the library because distributions build it with `--prefix=/usr`.
+The `libthai-data` package installs exactly there.
+
+Release archives also carry a copy of `thbrk.tri`. It is only found
+automatically if you unpack the archive over `/usr`; from anywhere else, point
+the build at it:
 
 ```sh
 tar xJf typst-x86_64-unknown-linux-gnu.tar.xz
@@ -75,10 +87,7 @@ export THAI_DICT_PATH="$PWD/typst-x86_64-unknown-linux-gnu/share/libthai/thbrk.t
 ```
 
 `crates/typst-layout/src/inline/linebreak.rs` reads that variable and passes
-it straight to `th_brk_new`, bypassing all three of libthai's own dictionary
-lookup layers. Without it `th_brk_new(NULL)` resolves the dictionary through
-the path compiled into libthai at build time, which does not exist on your
-machine.
+it straight to `th_brk_new`, ahead of every path libthai searches itself.
 
 Release archives are published for `x86_64-unknown-linux-gnu`. Other
 architectures, including 64-bit ARM for Raspberry Pi, are not built yet.

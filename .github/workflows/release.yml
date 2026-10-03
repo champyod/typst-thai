@@ -42,9 +42,10 @@ jobs:
           ARCHIVE_DIR="typst-${{ matrix.target }}"
           mkdir "$ARCHIVE_DIR"
           cp README.md LICENSE NOTICE "$ARCHIVE_DIR"
-          # th_brk_new falls back to the DICT_DIR compiled into libthai, an
-          # absolute build-machine path that does not exist on a consumer's
-          # machine, so the dictionary ships with the archive.
+          # th_brk_new searches $LIBTHAI_DICTDIR and then /usr/share/libthai,
+          # the path compiled in because distros build with --prefix=/usr. So
+          # this copy is only found by an unpack over /usr; it travels with the
+          # archive so a consumer can point THAI_DICT_PATH at it instead.
           mkdir -p "$ARCHIVE_DIR/share/libthai"
           cp /usr/share/libthai/thbrk.tri "$ARCHIVE_DIR/share/libthai"
           if [ -f "$TARGET_DIR/typst.exe" ]; then
