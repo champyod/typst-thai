@@ -80,8 +80,8 @@ lookup layers. Without it `th_brk_new(NULL)` resolves the dictionary through
 the path compiled into libthai at build time, which does not exist on your
 machine.
 
-Release archives are published for two targets: `x86_64-unknown-linux-gnu`
-and `aarch64-unknown-linux-gnu`.
+Release archives are published for `x86_64-unknown-linux-gnu`. Other
+architectures, including 64-bit ARM for Raspberry Pi, are not built yet.
 
 ## Use
 
