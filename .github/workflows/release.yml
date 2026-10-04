@@ -98,13 +98,11 @@ jobs:
           ARCHIVE_DIR="typst-${{ matrix.target }}"
           mkdir "$ARCHIVE_DIR"
           cp README.md LICENSE NOTICE "$ARCHIVE_DIR"
-          # th_brk_new searches $LIBTHAI_DICTDIR and then the dictionary
-          # directory compiled into libthai when it was built: /usr/share/libthai
-          # on Linux, the Homebrew prefix on macOS. So this copy is only found
-          # by an unpack over that prefix; it travels with the archive so a
-          # consumer can point THAI_DICT_PATH at it instead.
-          # It is the merged trie, not the distro's own, so a consumer gets this
+          # The merged trie, not the distro's own, so a consumer gets this
           # repo's compounds with no environment variable and nothing extra.
+          # th_brk_new finds it after an unpack over the prefix libthai was
+          # built for: /usr/share/libthai on Linux, the Homebrew prefix on
+          # macOS, and the DLL-relative walk below on Windows.
           mkdir -p "$ARCHIVE_DIR/share/libthai"
           if [ -f "$TARGET_DIR/typst.exe" ]; then
             ARCHIVE="$ARCHIVE_DIR.zip"
