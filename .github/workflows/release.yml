@@ -57,11 +57,13 @@ jobs:
 
       - name: Install libthai
         if: startsWith(matrix.os, 'macos-')
-        # Homebrew's prefix is /opt/homebrew on Apple Silicon, which is off
-        # clang's default library search path, so a bare -lthai needs this.
+        # clang does not honour LIBRARY_PATH the way gcc does, and the Homebrew
+        # prefix is /opt/homebrew on Apple Silicon, off clang's default search
+        # path, so a bare -lthai would not resolve. The prefix has to be given
+        # to rustc as a native search path instead.
         run: |
           brew install libthai
-          echo "LIBRARY_PATH=$(brew --prefix)/lib;$LIBRARY_PATH" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=-L native=$(brew --prefix)/lib" >> "$GITHUB_ENV"
 
       - name: Run Cargo
         run: cargo build -p typst-cli --release --target ${{ matrix.target }} --features self-update

@@ -79,7 +79,14 @@ jobs:
         # The Homebrew formula installs thbrk.tri into the prefix's share/libthai,
         # which is the directory compiled into the library, so no dictionary
         # override is needed on this platform.
-        run: brew install libthai
+        #
+        # The prefix has to go to rustc as a native search path: clang does not
+        # honour LIBRARY_PATH the way gcc does, and /opt/homebrew is off
+        # clang's default search path on Apple Silicon. Appending to RUSTFLAGS
+        # keeps the workflow's -Dwarnings.
+        run: |
+          brew install libthai
+          echo "RUSTFLAGS=$RUSTFLAGS -L native=$(brew --prefix)/lib" >> "$GITHUB_ENV"
       - name: Build and run the test suite
         shell: bash
         # The flag has to vanish entirely on Linux: `cargo test --target` with an
