@@ -30,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         bits: [64]
         include:
           - os: ubuntu-latest
@@ -74,6 +74,12 @@ jobs:
           # The compiled-in DICT_DIR is an absolute build-machine path, and the
           # DLL-relative fallback needs a loaded DLL that a static link never has.
           echo "THAI_DICT_PATH=C:\\msys64\\ucrt64\\share\\libthai\\thbrk.tri" >> "$GITHUB_ENV"
+      - name: Install libthai
+        if: startsWith(matrix.os, 'macos-')
+        # The Homebrew formula installs thbrk.tri into the prefix's share/libthai,
+        # which is the directory compiled into the library, so no dictionary
+        # override is needed on this platform.
+        run: brew install libthai
       - name: Build and run the test suite
         shell: bash
         # The flag has to vanish entirely on Linux: `cargo test --target` with an
