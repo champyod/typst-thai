@@ -82,11 +82,16 @@ jobs:
         #
         # The prefix has to go to rustc as a native search path: clang does not
         # honour LIBRARY_PATH the way gcc does, and /opt/homebrew is off
-        # clang's default search path on Apple Silicon. Appending to RUSTFLAGS
-        # keeps the workflow's -Dwarnings.
+        # clang's default search path on Apple Silicon. Both variables are
+        # appended to, because the workflow already sets -Dwarnings in each.
+        # RUSTDOCFLAGS is not redundant: cargo test runs doctests through
+        # rustdoc, which reads RUSTDOCFLAGS and ignores RUSTFLAGS, so without
+        # it every doctest link still fails on -lthai.
         run: |
           brew install libthai
-          echo "RUSTFLAGS=$RUSTFLAGS -L native=$(brew --prefix)/lib" >> "$GITHUB_ENV"
+          search_path="$(brew --prefix)/lib"
+          echo "RUSTFLAGS=$RUSTFLAGS -L native=$search_path" >> "$GITHUB_ENV"
+          echo "RUSTDOCFLAGS=$RUSTDOCFLAGS -L native=$search_path" >> "$GITHUB_ENV"
       - name: Build and run the test suite
         shell: bash
         # The flag has to vanish entirely on Linux: `cargo test --target` with an
