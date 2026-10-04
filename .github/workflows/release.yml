@@ -18,6 +18,14 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+          # The Apple SDK licence only ever blocked cross-rs *images*; every
+          # platform here builds on its own runner, so no cross is involved.
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-gnu
+            os: windows-latest
 
     steps:
       - name: Checkout repository
@@ -29,8 +37,31 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Install libthai
+        if: startsWith(matrix.os, 'ubuntu-')
         # libthai-data ships thbrk.tri, which th_brk_new reads at runtime.
         run: sudo apt install -y libthai-dev libthai-data
+
+      - name: Install libthai
+        if: startsWith(matrix.os, 'windows-')
+        shell: bash
+        # libthai is autotools-only, so it yields a GNU import library and never
+        # the MSVC thai.lib that link.exe requires; hence the GNU target above.
+        # PATH and LIBRARY_PATH have to go through GITHUB_ENV because an export
+        # in this block would not reach the later steps.
+        run: |
+          pacman=C:/msys64/usr/bin/pacman.exe
+          "$pacman" -Sy --noconfirm
+          "$pacman" -S --noconfirm --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-libthai
+          echo "PATH=C:\\msys64\\ucrt64\\bin;$(cygpath -wp "$PATH")" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=C:\\msys64\\ucrt64\\lib;$LIBRARY_PATH" >> "$GITHUB_ENV"
+
+      - name: Install libthai
+        if: startsWith(matrix.os, 'macos-')
+        # Homebrew's prefix is /opt/homebrew on Apple Silicon, which is off
+        # clang's default library search path, so a bare -lthai needs this.
+        run: |
+          brew install libthai
+          echo "LIBRARY_PATH=$(brew --prefix)/lib;$LIBRARY_PATH" >> "$GITHUB_ENV"
 
       - name: Run Cargo
         run: cargo build -p typst-cli --release --target ${{ matrix.target }} --features self-update
@@ -42,19 +73,32 @@ jobs:
           ARCHIVE_DIR="typst-${{ matrix.target }}"
           mkdir "$ARCHIVE_DIR"
           cp README.md LICENSE NOTICE "$ARCHIVE_DIR"
-          # th_brk_new searches $LIBTHAI_DICTDIR and then /usr/share/libthai,
-          # the path compiled in because distros build with --prefix=/usr. So
-          # this copy is only found by an unpack over /usr; it travels with the
-          # archive so a consumer can point THAI_DICT_PATH at it instead.
+          # th_brk_new searches $LIBTHAI_DICTDIR and then the dictionary
+          # directory compiled into libthai when it was built: /usr/share/libthai
+          # on Linux, the Homebrew prefix on macOS. So this copy is only found
+          # by an unpack over that prefix; it travels with the archive so a
+          # consumer can point THAI_DICT_PATH at it instead.
           mkdir -p "$ARCHIVE_DIR/share/libthai"
-          cp /usr/share/libthai/thbrk.tri "$ARCHIVE_DIR/share/libthai"
           if [ -f "$TARGET_DIR/typst.exe" ]; then
             ARCHIVE="$ARCHIVE_DIR.zip"
-            cp "$TARGET_DIR/typst.exe" "$ARCHIVE_DIR"
+            # MSYS2 builds libthai shared, so libthai-0.dll must ship beside the
+            # binary, and its relocatable.patch finds thbrk.tri by walking two
+            # levels up from the DLL's own directory. Nesting both under bin/
+            # makes that walk land on the archive root and resolve to the copy
+            # above, so Windows needs no THAI_DICT_PATH and nothing else nests.
+            mkdir -p "$ARCHIVE_DIR/bin"
+            cp "$TARGET_DIR/typst.exe" "$ARCHIVE_DIR/bin"
+            cp C:/msys64/ucrt64/bin/libthai-0.dll "$ARCHIVE_DIR/bin"
+            cp C:/msys64/ucrt64/share/libthai/thbrk.tri "$ARCHIVE_DIR/share/libthai"
             7z a -r "$ARCHIVE" "$ARCHIVE_DIR"
           else
             ARCHIVE="$ARCHIVE_DIR.tar.xz"
             cp "$TARGET_DIR/typst" "$ARCHIVE_DIR"
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              cp "$(brew --prefix)/share/libthai/thbrk.tri" "$ARCHIVE_DIR/share/libthai"
+            else
+              cp /usr/share/libthai/thbrk.tri "$ARCHIVE_DIR/share/libthai"
+            fi
             tar cJf "$ARCHIVE" "$ARCHIVE_DIR"
           fi
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
