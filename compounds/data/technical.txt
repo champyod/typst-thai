@@ -1,0 +1,36 @@
+# Thai compounds held together across a line break.
+#
+# One compound per line, UTF-8, no whitespace inside a line. Lines starting with
+# # are comments; blank lines are ignored.
+#
+# Add an entry only when the whole is a word a reader sees as one unit, its parts
+# are themselves dictionary words, and it is short enough to fit a line. Never add
+# a clause. See README.md for the reasoning.
+
+# --- named in the request -------------------------------------------------
+หน่วยความจำ
+ภาษาไทย
+หน่วยประมวลผล
+ระบบประมวลผล
+ความแม่นยำ
+เครือข่ายคอมพิวเตอร์
+
+# --- standard technical compounds missing from thbrk.tri -------------------
+ระบบปฏิบัติการ
+ระบบสารสนเทศ
+ระดับนัยสำคัญ
+ฐานข้อมูล
+ชุดข้อมูล
+หน่วยความจำภายใน
+ฟังก์ชัน
+เครือข่าย
+ความเร็ว
+หน่วยความจำตาม
+
+# --- ordinary words libthai splits because the parts are present but the
+# --- whole is not. ล่าสุด in particular splits as ล่า / สุด.
+ล่าสุด
+ร่วมกับ
+ช่องคะแนน
+นำเสนอ
+ชุดฝึก

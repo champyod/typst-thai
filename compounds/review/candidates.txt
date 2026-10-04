@@ -1,0 +1,70 @@
+# Candidate compounds — NOT merged, NOT active
+#
+# Mined from the frozen benchmark corpus by running libthai's own segmenter over
+# every Thai run and keeping the ones it splits into two or more parts. This file
+# is a review queue, not a seed: `build.sh` only reads `data/`, so nothing here
+# affects layout until you move a line into `data/technical.txt`.
+#
+# Format, tab separated:  run <TAB> occurrences <TAB> current segmentation
+#
+# Read the list with suspicion. A Thai clause is an unbroken run just like a
+# compound is, so the mine contains both. The bottom of this file is mostly whole
+# clauses and noun phrases that SHOULD keep splitting — `มี / ค่า`, `บน / สถาปัตยกรรม`
+# and `บันทึก / ผล` are correct breaks. Promoting those would make them unbreakable
+# and cause overfull boxes for no gain.
+#
+# The useful entries are near the top: short, frequent, and split into parts that
+# are themselves dictionary words even though the whole is the word a reader sees.
+# Confirm any entry with:
+#     trietool -p build thbrk query '<word>'
+# An answer of -1 means libthai already knows it and the split is legitimate.
+
+ด้วยคำสั่ง	7	ด้วย / คำ / สั่ง
+นำเสนอ	6	นำ / เสนอ
+ดำเนินการตามขั้นตอนต่อไปนี้	5	ดำเนิน / การ / ตาม / ขั้นตอน / ต่อ / ไป / นี้
+ดาวน์โหลดชุดข้อมูล	4	ดาวน์โหลด / ชุด / ข้อมูล
+มีค่า	4	มี / ค่า
+รุ่นล่าสุด	4	รุ่น / ล่า / สุด
+ร่วมกับ	4	ร่วม / กับ
+วัดค่า	4	วัด / ค่า
+ขั้นตอนการทดลอง	3	ขั้นตอน / การ / ทดลอง
+คอมไพล์โปรเจกต์สำหรับระบบปฏิบัติการ	3	คอมไพล์ / โปรเจกต์ / สำหรับ / ระบบ / ปฏิบัติการ
+ชุดตรวจสอบ	3	ชุด / ตรวจสอบ
+ตามสูตร	3	ตาม / สูตร
+ทดสอบการทำงานทุกฟังก์ชันบน	3	ทดสอบ / การ / ทำงาน / ทุก / ฟังก์ชัน / บน
+ที่ระดับนัยสำคัญ	3	ที่ / ระดับ / นัย / สำคัญ
+รายงานค่าเฉลี่ยเลขคณิตและส่วนเบี่ยงเบนมาตรฐาน	3	รายงาน / ค่า / เฉลี่ย / เลขคณิต / และ / ส่วน / เบี่ยง / เบน / มาตรฐาน
+สูงถึง	3	สูง / ถึง
+เรียกใช้แบบจำลอง	3	เรียก / ใช้ / แบบ / จำลอง
+และชุดทดสอบ	3	และ / ชุด / ทดสอบ
+กำหนดชุดค่าการทดลอง	2	กำหนด / ชุด / ค่า / การ / ทดลอง
+กำหนดให้	2	กำหนด / ให้
+ขณะที่	2	ขณะ / ที่
+ความเร็วในการแปล	2	ความ / เร็ว / ใน / การ / แปล
+คัดเลือกแบบจำลอง	2	คัดเลือก / แบบ / จำลอง
+คำนวณค่า	2	คำนวณ / ค่า
+จับเวลาตั้งแต่กด	2	จับ / เวลา / ตั้งแต่ / กด
+ชุดฝึก	2	ชุด / ฝึก
+ช่องคะแนน	2	ช่อง / คะแนน
+ซึ่งประกอบด้วยภาพ	2	ซึ่ง / ประกอบ / ด้วย / ภาพ
+ซึ่งวัดความแม่นยำของการจับคู่	2	ซึ่ง / วัด / ความ / แม่นยำ / ของ / การ / จับ / คู่
+ซึ่งใช้การไม่ได้ในพื้นที่ไร้สัญญาณและละเมิดกำหนดการรักษาความลับของข้อมูล	2	ซึ่ง / ใช้ / การ / ไม่ / ได้ / ใน / พื้นที่ / ไร้ / สัญญาณ / และ / ละเมิด / กำหนด / การ / รักษา / ความ / ลับ / ของ / ข้อมูล
+ดำเนินการอนุมานผล	2	ดำเนิน / การ / อนุมาน / ผล
+ด้วยขั้นตอนเดียวกันกับข้อ	2	ด้วย / ขั้นตอน / เดียวกัน / กับ / ข้อ
+ตั้งค่าตัวปรับเหมาะ	2	ตั้ง / ค่า / ตัว / ปรับ / เหมาะ
+ตั้งค่าสภาพแวดล้อมการทดสอบโดยกำหนดค่า	2	ตั้ง / ค่า / สภาพ / แวดล้อม / การ / ทดสอบ / โดย / กำหนด / ค่า
+ต่อวินาที	2	ต่อ / วินาที
+ทำซ้ำขั้นตอนที่	2	ทำซ้ำ / ขั้นตอน / ที่
+ที่ผ่านการคัดเลือกและปรับเทียบแล้วเป็นรูปแบบ	2	ที่ / ผ่าน / การ / คัดเลือก / และ / ปรับ / เทียบ / แล้ว / เป็น / รูปแบบ
+ที่ใช้	2	ที่ / ใช้
+นับจำนวนและร้อยละของตัวอย่างในแต่ละประเภท	2	นับ / จำนวน / และ / ร้อยละ / ของ / ตัวอย่าง / ใน / แต่ละ / ประเภท
+บนสถาปัตยกรรม	2	บน / สถาปัตยกรรม
+บันทึกผล	2	บันทึก / ผล
+บันทึกแบบจำลองที่ปรับเทียบแล้วในรูปแบบ	2	บันทึก / แบบ / จำลอง / ที่ / ปรับ / เทียบ / แล้ว / ใน / รูปแบบ
+ประโยคใน	2	ประโยค / ใน
+ปรับเทียบแบบจำลอง	2	ปรับ / เทียบ / แบบ / จำลอง
+ผิดพลาดเท่านั้น	2	ผิดพลาด / เท่านั้น
+
+# Totals at the time of mining: 1197 Thai runs examined, 315 already whole,
+# 882 split, 776 distinct split shapes. Splitting is the norm, not the exception,
+# which is exactly why promoting entries needs judgement rather than a bulk import.

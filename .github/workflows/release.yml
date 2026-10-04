@@ -39,7 +39,8 @@ jobs:
       - name: Install libthai
         if: startsWith(matrix.os, 'ubuntu-')
         # libthai-data ships thbrk.tri, which th_brk_new reads at runtime.
-        run: sudo apt install -y libthai-dev libthai-data
+        # trietool lives in libdatrie, a separate package from libthai.
+        run: sudo apt install -y libthai-dev libthai-data libdatrie1-bin
 
       - name: Install libthai
         if: startsWith(matrix.os, 'windows-')
@@ -48,10 +49,12 @@ jobs:
         # the MSVC thai.lib that link.exe requires; hence the GNU target above.
         # PATH and LIBRARY_PATH have to go through GITHUB_ENV because an export
         # in this block would not reach the later steps.
+        # trietool lives in libdatrie, a separate package from libthai; it rides
+        # on the ucrt64 bin directory already added to PATH.
         run: |
           pacman=C:/msys64/usr/bin/pacman.exe
           "$pacman" -Sy --noconfirm
-          "$pacman" -S --noconfirm --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-libthai
+          "$pacman" -S --noconfirm --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-libthai mingw-w64-ucrt-x86_64-libdatrie
           echo "PATH=C:\\msys64\\ucrt64\\bin;$(cygpath -wp "$PATH")" >> "$GITHUB_ENV"
           echo "LIBRARY_PATH=C:\\msys64\\ucrt64\\lib;$LIBRARY_PATH" >> "$GITHUB_ENV"
 
@@ -63,7 +66,27 @@ jobs:
         # to rustc as a native search path instead.
         run: |
           brew install libthai
+          # trietool lives in libdatrie, a separate formula from libthai.
+          brew install libdatrie
           echo "RUSTFLAGS=-L native=$(brew --prefix)/lib" >> "$GITHUB_ENV"
+
+      - name: Build merged dictionary
+        shell: bash
+        # Merging here rather than at consume time means unpacking the archive
+        # over /usr is the whole install: no THAI_DICT_PATH, no extra step. The
+        # base trie is wherever libthai-data installed it on this runner, and
+        # trietool reaches build.sh through the PATH set in the step above.
+        # build.sh is invoked through bash because Git does not preserve its
+        # executable bit on a Windows checkout.
+        run: |
+          case "$RUNNER_OS" in
+            Linux) THAI_BASE_TRIE=/usr/share/libthai/thbrk.tri ;;
+            macOS) THAI_BASE_TRIE="$(brew --prefix)/share/libthai/thbrk.tri" ;;
+            Windows) THAI_BASE_TRIE=C:/msys64/ucrt64/share/libthai/thbrk.tri ;;
+          esac
+          export THAI_BASE_TRIE
+          echo "THAI_BASE_TRIE=$THAI_BASE_TRIE"
+          bash compounds/build.sh
 
       - name: Run Cargo
         run: cargo build -p typst-cli --release --target ${{ matrix.target }} --features self-update
@@ -75,11 +98,11 @@ jobs:
           ARCHIVE_DIR="typst-${{ matrix.target }}"
           mkdir "$ARCHIVE_DIR"
           cp README.md LICENSE NOTICE "$ARCHIVE_DIR"
-          # th_brk_new searches $LIBTHAI_DICTDIR and then the dictionary
-          # directory compiled into libthai when it was built: /usr/share/libthai
-          # on Linux, the Homebrew prefix on macOS. So this copy is only found
-          # by an unpack over that prefix; it travels with the archive so a
-          # consumer can point THAI_DICT_PATH at it instead.
+          # The merged trie, not the distro's own, so a consumer gets this
+          # repo's compounds with no environment variable and nothing extra.
+          # th_brk_new finds it after an unpack over the prefix libthai was
+          # built for: /usr/share/libthai on Linux, the Homebrew prefix on
+          # macOS, and the DLL-relative walk below on Windows.
           mkdir -p "$ARCHIVE_DIR/share/libthai"
           if [ -f "$TARGET_DIR/typst.exe" ]; then
             ARCHIVE="$ARCHIVE_DIR.zip"
@@ -91,16 +114,12 @@ jobs:
             mkdir -p "$ARCHIVE_DIR/bin"
             cp "$TARGET_DIR/typst.exe" "$ARCHIVE_DIR/bin"
             cp C:/msys64/ucrt64/bin/libthai-0.dll "$ARCHIVE_DIR/bin"
-            cp C:/msys64/ucrt64/share/libthai/thbrk.tri "$ARCHIVE_DIR/share/libthai"
+            cp compounds/build/thbrk.tri "$ARCHIVE_DIR/share/libthai"
             7z a -r "$ARCHIVE" "$ARCHIVE_DIR"
           else
             ARCHIVE="$ARCHIVE_DIR.tar.xz"
             cp "$TARGET_DIR/typst" "$ARCHIVE_DIR"
-            if [ "$RUNNER_OS" = "macOS" ]; then
-              cp "$(brew --prefix)/share/libthai/thbrk.tri" "$ARCHIVE_DIR/share/libthai"
-            else
-              cp /usr/share/libthai/thbrk.tri "$ARCHIVE_DIR/share/libthai"
-            fi
+            cp compounds/build/thbrk.tri "$ARCHIVE_DIR/share/libthai"
             tar cJf "$ARCHIVE" "$ARCHIVE_DIR"
           fi
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
