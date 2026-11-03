@@ -113,7 +113,11 @@ jobs:
             # above, so Windows needs no THAI_DICT_PATH and nothing else nests.
             mkdir -p "$ARCHIVE_DIR/bin"
             cp "$TARGET_DIR/typst.exe" "$ARCHIVE_DIR/bin"
+            # libthai-0.dll's import table names libdatrie-1.dll, so a zip with
+            # only libthai does not start on a machine without MSYS2. Neither
+            # DLL pulls anything else beyond the Windows UCRT.
             cp C:/msys64/ucrt64/bin/libthai-0.dll "$ARCHIVE_DIR/bin"
+            cp C:/msys64/ucrt64/bin/libdatrie-1.dll "$ARCHIVE_DIR/bin"
             cp compounds/build/thbrk.tri "$ARCHIVE_DIR/share/libthai"
             7z a -r "$ARCHIVE" "$ARCHIVE_DIR"
           else
