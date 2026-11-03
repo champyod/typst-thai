@@ -1,14 +1,40 @@
-# Based on ripgrep's release action:
-# https://github.com/BurntSushi/ripgrep/blob/master/.github/workflows/release.yml
-
 name: Create Release Assets
+
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build assets for
+        required: true
+
+env:
+  VERSION: ${{ github.event.release.tag_name || inputs.tag }}
 
 jobs:
+  build-dictionary:
+    name: Build merged dictionary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ env.VERSION }}
+      # One platform builds the trie: it is a datrie file, not native code, and
+      # trietool on Windows cannot round-trip Thai through the ANSI code page,
+      # so its verification step rejects correct entries.
+      - name: Install trietool
+        run: sudo apt install -y libthai-data libdatrie1-bin
+      - name: Merge compounds
+        run: THAI_BASE_TRIE=/usr/share/libthai/thbrk.tri bash compounds/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thbrk-trie
+          path: compounds/build/thbrk.tri
+
   build-binaries:
     name: Build ${{ matrix.target }} binary
+    needs: build-dictionary
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -18,8 +44,8 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-          # The Apple SDK licence only ever blocked cross-rs *images*; every
-          # platform here builds on its own runner, so no cross is involved.
+          # Every platform builds on its own runner; no cross-rs image is used,
+          # which is what the Apple SDK licence blocked.
           - target: x86_64-apple-darwin
             os: macos-latest
           - target: aarch64-apple-darwin
@@ -28,29 +54,24 @@ jobs:
             os: windows-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ env.VERSION }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@f8be11a05b1d4f3fcebe6410cc16743212b999b0 # 1.98.0
         with:
           target: ${{ matrix.target }}
 
-      - name: Install libthai
+      - name: Install libthai (Linux)
         if: startsWith(matrix.os, 'ubuntu-')
-        # libthai-data ships thbrk.tri, which th_brk_new reads at runtime.
-        # trietool lives in libdatrie, a separate package from libthai.
-        run: sudo apt install -y libthai-dev libthai-data libdatrie1-bin
+        run: sudo apt install -y libthai-dev
 
-      - name: Install libthai
+      - name: Install libthai (Windows)
         if: startsWith(matrix.os, 'windows-')
         shell: bash
         # libthai is autotools-only, so it yields a GNU import library and never
         # the MSVC thai.lib that link.exe requires; hence the GNU target above.
-        # PATH and LIBRARY_PATH have to go through GITHUB_ENV because an export
-        # in this block would not reach the later steps.
-        # trietool lives in libdatrie, a separate package from libthai; it rides
-        # on the ucrt64 bin directory already added to PATH.
         run: |
           pacman=C:/msys64/usr/bin/pacman.exe
           "$pacman" -Sy --noconfirm
@@ -58,35 +79,18 @@ jobs:
           echo "PATH=C:\\msys64\\ucrt64\\bin;$(cygpath -wp "$PATH")" >> "$GITHUB_ENV"
           echo "LIBRARY_PATH=C:\\msys64\\ucrt64\\lib;$LIBRARY_PATH" >> "$GITHUB_ENV"
 
-      - name: Install libthai
+      - name: Install libthai (macOS)
         if: startsWith(matrix.os, 'macos-')
-        # clang does not honour LIBRARY_PATH the way gcc does, and the Homebrew
-        # prefix is /opt/homebrew on Apple Silicon, off clang's default search
-        # path, so a bare -lthai would not resolve. The prefix has to be given
-        # to rustc as a native search path instead.
+        # clang ignores LIBRARY_PATH and the Homebrew prefix is off its default
+        # search path, so the native library dir goes to rustc directly.
         run: |
           brew install libthai
-          # trietool lives in libdatrie, a separate formula from libthai.
-          brew install libdatrie
           echo "RUSTFLAGS=-L native=$(brew --prefix)/lib" >> "$GITHUB_ENV"
 
-      - name: Build merged dictionary
-        shell: bash
-        # Merging here rather than at consume time means unpacking the archive
-        # over /usr is the whole install: no THAI_DICT_PATH, no extra step. The
-        # base trie is wherever libthai-data installed it on this runner, and
-        # trietool reaches build.sh through the PATH set in the step above.
-        # build.sh is invoked through bash because Git does not preserve its
-        # executable bit on a Windows checkout.
-        run: |
-          case "$RUNNER_OS" in
-            Linux) THAI_BASE_TRIE=/usr/share/libthai/thbrk.tri ;;
-            macOS) THAI_BASE_TRIE="$(brew --prefix)/share/libthai/thbrk.tri" ;;
-            Windows) THAI_BASE_TRIE=C:/msys64/ucrt64/share/libthai/thbrk.tri ;;
-          esac
-          export THAI_BASE_TRIE
-          echo "THAI_BASE_TRIE=$THAI_BASE_TRIE"
-          bash compounds/build.sh
+      - uses: actions/download-artifact@v4
+        with:
+          name: thbrk-trie
+          path: compounds/build
 
       - name: Run Cargo
         run: cargo build -p typst-cli --release --target ${{ matrix.target }} --features self-update
@@ -98,32 +102,20 @@ jobs:
           ARCHIVE_DIR="typst-${{ matrix.target }}"
           mkdir "$ARCHIVE_DIR"
           cp README.md LICENSE NOTICE "$ARCHIVE_DIR"
-          # The merged trie, not the distro's own, so a consumer gets this
-          # repo's compounds with no environment variable and nothing extra.
-          # th_brk_new finds it after an unpack over the prefix libthai was
-          # built for: /usr/share/libthai on Linux, the Homebrew prefix on
-          # macOS, and the DLL-relative walk below on Windows.
           mkdir -p "$ARCHIVE_DIR/share/libthai"
+          cp compounds/build/thbrk.tri "$ARCHIVE_DIR/share/libthai"
           if [ -f "$TARGET_DIR/typst.exe" ]; then
             ARCHIVE="$ARCHIVE_DIR.zip"
-            # MSYS2 builds libthai shared, so libthai-0.dll must ship beside the
-            # binary, and its relocatable.patch finds thbrk.tri by walking two
-            # levels up from the DLL's own directory. Nesting both under bin/
-            # makes that walk land on the archive root and resolve to the copy
-            # above, so Windows needs no THAI_DICT_PATH and nothing else nests.
+            # libthai-0.dll's import table names libdatrie-1.dll, so both ship
+            # beside typst.exe and a machine without MSYS2 still runs the zip.
             mkdir -p "$ARCHIVE_DIR/bin"
             cp "$TARGET_DIR/typst.exe" "$ARCHIVE_DIR/bin"
-            # libthai-0.dll's import table names libdatrie-1.dll, so a zip with
-            # only libthai does not start on a machine without MSYS2. Neither
-            # DLL pulls anything else beyond the Windows UCRT.
             cp C:/msys64/ucrt64/bin/libthai-0.dll "$ARCHIVE_DIR/bin"
             cp C:/msys64/ucrt64/bin/libdatrie-1.dll "$ARCHIVE_DIR/bin"
-            cp compounds/build/thbrk.tri "$ARCHIVE_DIR/share/libthai"
             7z a -r "$ARCHIVE" "$ARCHIVE_DIR"
           else
             ARCHIVE="$ARCHIVE_DIR.tar.xz"
             cp "$TARGET_DIR/typst" "$ARCHIVE_DIR"
-            cp compounds/build/thbrk.tri "$ARCHIVE_DIR/share/libthai"
             tar cJf "$ARCHIVE" "$ARCHIVE_DIR"
           fi
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
@@ -132,9 +124,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          VERSION="${{ github.ref_name }}"
-          gh release upload "$VERSION" "$ARCHIVE"
+        run: gh release upload "$VERSION" "$ARCHIVE" --clobber
 
   build-docs:
     name: Build documentation (PDF)
@@ -142,16 +132,17 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ env.VERSION }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@f8be11a05b1d4f3fcebe6410cc16743212b999b0 # 1.98.0
 
       - name: Install libthai
-        # docit compiles the docs by linking typst-docs, so this job needs
-        # libthai exactly like the binary job does.
-        run: sudo apt install -y libthai-dev libthai-data
+        # docit links typst-docs, so this job needs libthai exactly like the
+        # binary job does.
+        run: sudo apt install -y libthai-dev
 
       - name: Compile documentation
         run: cargo docit compile --format pdf --release
@@ -163,6 +154,4 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          VERSION="${{ github.ref_name }}"
-          gh release upload "$VERSION" typst-documentation.pdf
+        run: gh release upload "$VERSION" typst-documentation.pdf --clobber
